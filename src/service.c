@@ -1074,9 +1074,9 @@ service_restart_streams(service_t *t)
        * instead of immediately stopping the stream. This prevents freezing
        * during PMT changes (e.g., regional program switches).
        * 
-       * t->s_grace_delay is the service's configured grace period (derived from
-       * the service's s_grace_period() callback + any subscription postpone time).
-       * If not set, use SERVICE_GRACE_DEFAULT (5 seconds).
+       * t->s_grace_delay contains the service's configured grace period (set
+       * during service start from the s_grace_period() callback result plus
+       * any subscription postpone time). If not set, use SERVICE_GRACE_DEFAULT.
        * Limit to reasonable range (1-60 seconds) to prevent excessive delays. */
       int grace = MINMAX(t->s_grace_delay > 0 ? t->s_grace_delay : SERVICE_GRACE_DEFAULT, 1, 60);
       sm = streaming_msg_create_code(SMT_GRACE, grace);
