@@ -42,6 +42,12 @@ static htsmsg_t *service_class_save(struct idnode *self, char *filename, size_t 
 static void service_class_load(struct idnode *self, htsmsg_t *conf);
 static int service_make_nicename0(service_t *t, char *buf, size_t len, int adapter);
 
+/* Default grace period (in seconds) for stream reconfiguration during PMT changes.
+ * 5 seconds provides sufficient buffer time for clients to handle stream
+ * reconfiguration without interruption while being short enough to minimize
+ * any perceived delay during channel switches. */
+#define SERVICE_GRACE_DEFAULT 5
+
 struct service_queue service_all;
 struct service_queue service_raw_all;
 struct service_queue service_raw_remove;
@@ -1064,14 +1070,27 @@ service_restart_streams(service_t *t)
 
   if(had_streams) {
     if (had_components) {
-      sm = streaming_msg_create_code(SMT_STOP, SM_CODE_SOURCE_RECONFIGURED);
+      /* Send grace period to allow clients to buffer through the transition
+       * instead of immediately stopping the stream. This prevents freezing
+       * during PMT changes (e.g., regional program switches).
+       * 
+       * t->s_grace_delay contains the service's configured grace period (set
+       * during service start from the s_grace_period() callback result plus
+       * any subscription postpone time). If not set, use SERVICE_GRACE_DEFAULT.
+       * Limit to reasonable range (1-60 seconds) to prevent excessive delays. */
+      int grace = MINMAX(t->s_grace_delay > 0 ? t->s_grace_delay : SERVICE_GRACE_DEFAULT, 1, 60);
+      sm = streaming_msg_create_code(SMT_GRACE, grace);
       streaming_service_deliver(t, sm);
     }
+    /* Send new stream start without stopping - allows seamless reconfiguration.
+     * HTSP clients are designed to handle stream reconfiguration via new START
+     * messages, enabling smooth transitions during PMT changes. */
     ss = service_build_streaming_start(t);
     sm = streaming_msg_create_data(SMT_START, ss);
     streaming_pad_deliver(&t->s_streaming_pad, sm);
     t->s_running = 1;
   } else {
+    /* Only stop if there are no streams available */
     sm = streaming_msg_create_code(SMT_STOP, SM_CODE_NO_SERVICE);
     streaming_service_deliver(t, sm);
     t->s_running = 0;
