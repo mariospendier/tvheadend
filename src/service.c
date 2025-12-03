@@ -1064,14 +1064,19 @@ service_restart_streams(service_t *t)
 
   if(had_streams) {
     if (had_components) {
-      sm = streaming_msg_create_code(SMT_STOP, SM_CODE_SOURCE_RECONFIGURED);
+      /* Send grace period to allow clients to buffer through the transition
+       * instead of immediately stopping the stream. This prevents freezing
+       * during PMT changes (e.g., regional program switches). */
+      sm = streaming_msg_create_code(SMT_GRACE, t->s_grace_delay ? t->s_grace_delay : 5);
       streaming_service_deliver(t, sm);
     }
+    /* Send new stream start without stopping - allows seamless reconfiguration */
     ss = service_build_streaming_start(t);
     sm = streaming_msg_create_data(SMT_START, ss);
     streaming_pad_deliver(&t->s_streaming_pad, sm);
     t->s_running = 1;
   } else {
+    /* Only stop if there are no streams available */
     sm = streaming_msg_create_code(SMT_STOP, SM_CODE_NO_SERVICE);
     streaming_service_deliver(t, sm);
     t->s_running = 0;
