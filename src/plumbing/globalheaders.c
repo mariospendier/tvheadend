@@ -278,10 +278,18 @@ gh_start(globalheaders_t *gh, streaming_message_t *sm)
   
   gh->gh_ss = streaming_start_copy(sm->sm_data);
   
-  /* Reset disabled flags to give all streams a fresh chance on stream reconfiguration */
+  /* Reset disabled flags and clear cached headers to give all streams a fresh chance on stream reconfiguration */
   for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
     ssc = &gh->gh_ss->ss_components[i];
     ssc->ssc_disabled = 0;
+    
+    /* Clear cached headers on stream switch to force rebuilding from new stream data.
+     * This prevents reusing incomplete headers (e.g., video dimensions = 0) that could
+     * cause HTSP clients to wait indefinitely for video with hs_wait_for_video flag. */
+    if(ssc->ssc_gh != NULL) {
+      pktbuf_ref_dec(ssc->ssc_gh);
+      ssc->ssc_gh = NULL;
+    }
   }
   
   streaming_msg_free(sm);
