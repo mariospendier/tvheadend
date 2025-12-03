@@ -2671,8 +2671,6 @@ htsp_method_subscribe(htsp_connection_t *htsp, htsmsg_t *in)
 
   hs->hs_htsp = htsp;
   hs->hs_90khz = req90khz;
-  hs->hs_wait_for_video = 0;  // Explicitly initialize
-  hs->hs_first = 0;           // Explicitly initialize
   hs->hs_queue_depth = htsmsg_get_u32_or_default(in, "queueDepth",
 						 HTSP_DEFAULT_QUEUE_DEPTH);
   htsp_init_queue(&hs->hs_q, 0);
