@@ -2671,6 +2671,8 @@ htsp_method_subscribe(htsp_connection_t *htsp, htsmsg_t *in)
 
   hs->hs_htsp = htsp;
   hs->hs_90khz = req90khz;
+  hs->hs_wait_for_video = 0;  // Explicitly initialize
+  hs->hs_first = 0;           // Explicitly initialize
   hs->hs_queue_depth = htsmsg_get_u32_or_default(in, "queueDepth",
 						 HTSP_DEFAULT_QUEUE_DEPTH);
   htsp_init_queue(&hs->hs_q, 0);
@@ -4486,6 +4488,7 @@ static void
 htsp_subscription_service_status(htsp_subscription_t *hs, int status)
 {
   if(status & TSS_PACKETS) {
+    hs->hs_wait_for_video = 0;  // Reset flag when packets are flowing
     htsp_subscription_status(hs, NULL, NULL);
   } else if(status & TSS_ERRORS) {
     htsp_subscription_status(hs, service_tss2text(status), NULL);

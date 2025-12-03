@@ -639,8 +639,11 @@ dvb_pmt_callback
     if (update & ~(PMT_UPDATE_NEW_CA_STREAM |
                    PMT_UPDATE_NEW_CAID |
                    PMT_UPDATE_CA_PROVIDER_CHANGE |
-                   PMT_UPDATE_CAID_DELETED |
-                   PMT_UPDATE_CAID_PID)) {
+                   PMT_UPDATE_CAID_DELETED)) {
+      restart = s->s_status == SERVICE_RUNNING;
+    }
+    // Also restart on PCR changes as this indicates major stream reconfiguration
+    if (update & PMT_UPDATE_PCR) {
       restart = s->s_status == SERVICE_RUNNING;
     }
   }
