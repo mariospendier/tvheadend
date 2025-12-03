@@ -4486,6 +4486,7 @@ static void
 htsp_subscription_service_status(htsp_subscription_t *hs, int status)
 {
   if(status & TSS_PACKETS) {
+    hs->hs_wait_for_video = 0;  // Reset flag when packets are flowing
     htsp_subscription_status(hs, NULL, NULL);
   } else if(status & TSS_ERRORS) {
     htsp_subscription_status(hs, service_tss2text(status), NULL);

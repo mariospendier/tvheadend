@@ -636,11 +636,13 @@ dvb_pmt_callback
   /* Only restart if something that our clients worry about did change */
   restart = 0;
   if (update) {
-    if (update & ~(PMT_UPDATE_NEW_CA_STREAM |
-                   PMT_UPDATE_NEW_CAID |
-                   PMT_UPDATE_CA_PROVIDER_CHANGE |
-                   PMT_UPDATE_CAID_DELETED |
-                   PMT_UPDATE_CAID_PID)) {
+    // Restart on PCR changes or other significant updates
+    // PCR changes indicate major stream reconfiguration (e.g., regional switching)
+    if ((update & PMT_UPDATE_PCR) ||
+        (update & ~(PMT_UPDATE_NEW_CA_STREAM |
+                    PMT_UPDATE_NEW_CAID |
+                    PMT_UPDATE_CA_PROVIDER_CHANGE |
+                    PMT_UPDATE_CAID_DELETED))) {
       restart = s->s_status == SERVICE_RUNNING;
     }
   }
