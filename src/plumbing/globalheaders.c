@@ -35,8 +35,9 @@ typedef struct globalheaders {
 } globalheaders_t;
 
 /* note: there up to 2.5 sec diffs in some sources! */
-#define MAX_SCAN_TIME   5000  // in ms
-#define MAX_NOPKT_TIME  2500  // in ms
+/* increased timeouts to allow descrambler time to request new ECM keys during PMT changes */
+#define MAX_SCAN_TIME   15000  // in ms (was 5000)
+#define MAX_NOPKT_TIME  7500   // in ms (was 2500)
 
 /**
  *
@@ -272,7 +273,17 @@ headers_complete(globalheaders_t *gh)
 static void
 gh_start(globalheaders_t *gh, streaming_message_t *sm)
 {
+  int i;
+  streaming_start_component_t *ssc;
+  
   gh->gh_ss = streaming_start_copy(sm->sm_data);
+  
+  /* Reset disabled flags to give all streams a fresh chance on stream reconfiguration */
+  for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
+    ssc = &gh->gh_ss->ss_components[i];
+    ssc->ssc_disabled = 0;
+  }
+  
   streaming_msg_free(sm);
 }
 
