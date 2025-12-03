@@ -42,6 +42,9 @@ static htsmsg_t *service_class_save(struct idnode *self, char *filename, size_t 
 static void service_class_load(struct idnode *self, htsmsg_t *conf);
 static int service_make_nicename0(service_t *t, char *buf, size_t len, int adapter);
 
+/* Default grace period (in seconds) for stream reconfiguration during PMT changes */
+#define SERVICE_GRACE_DEFAULT 5
+
 struct service_queue service_all;
 struct service_queue service_raw_all;
 struct service_queue service_raw_remove;
@@ -1067,9 +1070,12 @@ service_restart_streams(service_t *t)
       /* Send grace period to allow clients to buffer through the transition
        * instead of immediately stopping the stream. This prevents freezing
        * during PMT changes (e.g., regional program switches).
-       * Use service grace delay if configured, otherwise default to 5 seconds.
+       * 
+       * t->s_grace_delay is the service's configured grace period (derived from
+       * the service's grace_period callback + any subscription postpone time).
+       * If not set, use SERVICE_GRACE_DEFAULT (5 seconds).
        * Limit to reasonable range (1-60 seconds) to prevent excessive delays. */
-      int grace = MINMAX(t->s_grace_delay > 0 ? t->s_grace_delay : 5, 1, 60);
+      int grace = MINMAX(t->s_grace_delay > 0 ? t->s_grace_delay : SERVICE_GRACE_DEFAULT, 1, 60);
       sm = streaming_msg_create_code(SMT_GRACE, grace);
       streaming_service_deliver(t, sm);
     }
