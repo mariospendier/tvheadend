@@ -1066,11 +1066,18 @@ service_restart_streams(service_t *t)
     if (had_components) {
       /* Send grace period to allow clients to buffer through the transition
        * instead of immediately stopping the stream. This prevents freezing
-       * during PMT changes (e.g., regional program switches). */
-      sm = streaming_msg_create_code(SMT_GRACE, t->s_grace_delay ? t->s_grace_delay : 5);
+       * during PMT changes (e.g., regional program switches).
+       * Use service grace delay if configured, otherwise default to 5 seconds.
+       * Limit to reasonable range (1-60 seconds) to prevent excessive delays. */
+      int grace = t->s_grace_delay > 0 ? t->s_grace_delay : 5;
+      if (grace < 1) grace = 1;
+      if (grace > 60) grace = 60;
+      sm = streaming_msg_create_code(SMT_GRACE, grace);
       streaming_service_deliver(t, sm);
     }
-    /* Send new stream start without stopping - allows seamless reconfiguration */
+    /* Send new stream start without stopping - allows seamless reconfiguration.
+     * HTSP clients are designed to handle stream reconfiguration via new START
+     * messages, enabling smooth transitions during PMT changes. */
     ss = service_build_streaming_start(t);
     sm = streaming_msg_create_data(SMT_START, ss);
     streaming_pad_deliver(&t->s_streaming_pad, sm);
