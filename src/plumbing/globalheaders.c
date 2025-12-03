@@ -284,8 +284,9 @@ gh_start(globalheaders_t *gh, streaming_message_t *sm)
     ssc->ssc_disabled = 0;
     
     /* Clear cached headers on stream switch to force rebuilding from new stream data.
-     * This prevents reusing incomplete headers (e.g., video dimensions = 0) that could
-     * cause HTSP clients to wait indefinitely for video with hs_wait_for_video flag. */
+     * This fixes HTSP stream hanging during regional/national broadcast switches (e.g., ORF2K HD).
+     * Without clearing, incomplete headers (e.g., video dimensions = 0) from the previous stream
+     * would be reused, causing HTSP clients to wait indefinitely with hs_wait_for_video flag set. */
     if(ssc->ssc_gh != NULL) {
       pktbuf_ref_dec(ssc->ssc_gh);
       ssc->ssc_gh = NULL;
