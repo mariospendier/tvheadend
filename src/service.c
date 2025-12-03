@@ -1069,9 +1069,7 @@ service_restart_streams(service_t *t)
        * during PMT changes (e.g., regional program switches).
        * Use service grace delay if configured, otherwise default to 5 seconds.
        * Limit to reasonable range (1-60 seconds) to prevent excessive delays. */
-      int grace = t->s_grace_delay > 0 ? t->s_grace_delay : 5;
-      if (grace < 1) grace = 1;
-      if (grace > 60) grace = 60;
+      int grace = MINMAX(t->s_grace_delay > 0 ? t->s_grace_delay : 5, 1, 60);
       sm = streaming_msg_create_code(SMT_GRACE, grace);
       streaming_service_deliver(t, sm);
     }
