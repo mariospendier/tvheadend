@@ -32,12 +32,19 @@ typedef struct globalheaders {
 
   int gh_passthru;
 
+  /* Retry mechanism for handling delayed descrambler keys */
+  int gh_retry_count;           // Number of retry attempts
+  int64_t gh_last_retry_time;   // Timestamp of last retry
+  int gh_streams_were_disabled; // Flag indicating streams were disabled due to timeout
+
 } globalheaders_t;
 
 /* note: there up to 2.5 sec diffs in some sources! */
 /* increased timeouts to allow descrambler time to request new ECM keys during PMT changes */
-#define MAX_SCAN_TIME   15000  // in ms (was 5000)
+#define MAX_SCAN_TIME   20000  // in ms (was 15000, increased to 20000 for retry mechanism)
 #define MAX_NOPKT_TIME  7500   // in ms (was 2500)
+#define MAX_RETRY_COUNT 3      // Maximum number of retry attempts
+#define RETRY_INTERVAL  5000   // Wait 5 seconds between retries (in ms)
 
 /**
  *
@@ -240,6 +247,8 @@ headers_complete(globalheaders_t *gh)
        */
       if(threshold || (qd[i] <= 0 && qd_max > (MAX_NOPKT_TIME * 90))) {
 	ssc->ssc_disabled = 1;
+        /* Track that streams were disabled for retry mechanism */
+        gh->gh_streams_were_disabled = 1;
         tvhdebug(LS_GLOBALHEADERS, "gh disable stream %d %s%s%s (PID %i) threshold %d qd %"PRId64" qd_max %"PRId64,
              ssc->es_index, streaming_component_type2txt(ssc->es_type),
              ssc->es_lang[0] ? " " : "", ssc->es_lang, ssc->es_pid,
@@ -268,6 +277,30 @@ headers_complete(globalheaders_t *gh)
 
 
 /**
+ * Check if we should attempt a retry for header collection
+ */
+static int
+gh_should_retry(globalheaders_t *gh)
+{
+  int64_t now = mclk();
+  
+  /* Don't retry if we haven't disabled any streams */
+  if (!gh->gh_streams_were_disabled)
+    return 0;
+  
+  /* Don't retry if we've exceeded max retries */
+  if (gh->gh_retry_count >= MAX_RETRY_COUNT)
+    return 0;
+  
+  /* Don't retry if not enough time has passed since last retry */
+  if (gh->gh_last_retry_time > 0 && 
+      (now - gh->gh_last_retry_time) < ms2mono(RETRY_INTERVAL))
+    return 0;
+  
+  return 1;
+}
+
+/**
  *
  */
 static void
@@ -277,6 +310,11 @@ gh_start(globalheaders_t *gh, streaming_message_t *sm)
   streaming_start_component_t *ssc;
   
   gh->gh_ss = streaming_start_copy(sm->sm_data);
+  
+  /* Reset retry state on new stream start */
+  gh->gh_retry_count = 0;
+  gh->gh_last_retry_time = 0;
+  gh->gh_streams_were_disabled = 0;
   
   /* Reset disabled flags and clear cached headers to give all streams a fresh chance on stream reconfiguration */
   for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
@@ -330,6 +368,30 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
 
     if(!gh_is_audiovideo(ssc->es_type))
       break;
+
+    /* Check if we should retry header collection after streams were disabled */
+    if (gh->gh_streams_were_disabled && gh_should_retry(gh)) {
+      /* Valid packet arrived after timeout - attempt retry */
+      if (pkt->pkt_payload != NULL && pkt->pkt_err == 0) {
+        gh->gh_retry_count++;
+        gh->gh_last_retry_time = mclk();
+        tvhdebug(LS_GLOBALHEADERS, "gh retry %d/%d: valid packet received after timeout, attempting header collection",
+                 gh->gh_retry_count, MAX_RETRY_COUNT);
+        
+        /* Re-enable previously disabled streams to give them another chance */
+        int i;
+        for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
+          streaming_start_component_t *comp = &gh->gh_ss->ss_components[i];
+          if (comp->ssc_disabled && gh_is_audiovideo(comp->es_type)) {
+            comp->ssc_disabled = 0;
+            tvhtrace(LS_GLOBALHEADERS, "gh retry: re-enabling stream %d %s (PID %i)",
+                     comp->es_index, streaming_component_type2txt(comp->es_type), comp->es_pid);
+          }
+        }
+        /* Clear the flag so we check headers again */
+        gh->gh_streams_were_disabled = 0;
+      }
+    }
 
     if(!headers_complete(gh))
       break;
