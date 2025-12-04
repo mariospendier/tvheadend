@@ -562,6 +562,12 @@ tsfix_input_packet(tsfix_t *tf, streaming_message_t *sm)
     return;
   }
 
+  /* Fix 1: Reset tf_wait_for_video when valid video packet with payload arrives */
+  if (tf->tf_wait_for_video && tfs->tfs_video && pkt->pkt_payload != NULL) {
+    tvhtrace(LS_TSFIX, "Valid video packet received, clearing tf_wait_for_video flag");
+    tf->tf_wait_for_video = 0;
+  }
+
   if (tf->tf_tsref == PTS_UNSET && pkt->pkt_dts != PTS_UNSET &&
       ((!tf->tf_hasvideo && tfs->tfs_audio) ||
        (tfs->tfs_video && pkt->v.pkt_frametype == PKT_I_FRAME))) {
@@ -644,10 +650,8 @@ tsfix_input(void *opaque, streaming_message_t *sm)
   case SMT_START:
     tsfix_stop(tf);
     tsfix_start(tf, sm->sm_data);
-    if (tf->tf_wait_for_video) {
-      streaming_msg_free(sm);
-      return;
-    }
+    /* Fix 2: Always forward SMT_START to downstream components,
+     * even when waiting for video. The client must know a new stream begins. */
     break;
   case SMT_STOP:
     tsfix_stop(tf);
