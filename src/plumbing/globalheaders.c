@@ -311,6 +311,61 @@ gh_start(globalheaders_t *gh, streaming_message_t *sm)
 
 
 /**
+ * PR #9: Handle retry mechanism for encrypted stream switches
+ * Re-enable disabled streams when successful descrambling is detected
+ */
+static void
+gh_handle_descramble_retry(globalheaders_t *gh, descramble_info_t *di)
+{
+  streaming_start_component_t *ssc;
+  int64_t now = getfastmonoclock();
+  int i, reenabled = 0, still_disabled = 0;
+  
+  /* Check if we should attempt a retry */
+  if (gh->gh_retry_count >= MAX_RETRY_COUNT) {
+    /* Max retries reached, give up */
+    return;
+  }
+  
+  if (gh->gh_last_retry_time != 0 && 
+      (now - gh->gh_last_retry_time) < ms2mono(RETRY_INTERVAL)) {
+    /* Not enough time has passed since last retry */
+    return;
+  }
+  
+  /* Re-enable all disabled audio/video streams and clear their cached headers */
+  for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
+    ssc = &gh->gh_ss->ss_components[i];
+    if (ssc->ssc_disabled && gh_is_audiovideo(ssc->es_type)) {
+      ssc->ssc_disabled = 0;
+      /* Clear cached headers to force rebuilding from descrambled stream */
+      if(ssc->ssc_gh != NULL) {
+        pktbuf_ref_dec(ssc->ssc_gh);
+        ssc->ssc_gh = NULL;
+      }
+      reenabled++;
+      tvhdebug(LS_GLOBALHEADERS, "gh re-enable stream %d %s%s%s (PID %i) after successful ECM (ecmtime=%d, retry %d/%d)",
+           ssc->es_index, streaming_component_type2txt(ssc->es_type),
+           ssc->es_lang[0] ? " " : "", ssc->es_lang, ssc->es_pid,
+           di->ecmtime, gh->gh_retry_count + 1, MAX_RETRY_COUNT);
+    } else if (ssc->ssc_disabled) {
+      still_disabled++;
+    }
+  }
+  
+  if (reenabled > 0) {
+    gh->gh_retry_count++;
+    gh->gh_last_retry_time = now;
+    /* Only reset the flag if all streams are now enabled or we've reached max retries */
+    if (still_disabled == 0 || gh->gh_retry_count >= MAX_RETRY_COUNT) {
+      gh->gh_streams_were_disabled = 0;
+    }
+    tvhinfo(LS_GLOBALHEADERS, "Re-enabled %d streams after successful descrambling (attempt %d/%d, ecmtime=%dms)",
+            reenabled, gh->gh_retry_count, MAX_RETRY_COUNT, di->ecmtime);
+  }
+}
+
+/**
  *
  */
 static void
@@ -379,39 +434,8 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
     if (gh->gh_streams_were_disabled && gh->gh_ss) {
       descramble_info_t *di = sm->sm_data;
       if (di && di->ecmtime > 0) {
-        /* Keys successfully received - re-enable all disabled streams and restart scan */
-        int64_t now = getfastmonoclock();
-        int i, reenabled = 0;
-        
-        /* Check if enough time has passed since last retry (5 seconds) */
-        if (gh->gh_retry_count < MAX_RETRY_COUNT && 
-            (gh->gh_last_retry_time == 0 || (now - gh->gh_last_retry_time) >= ms2mono(RETRY_INTERVAL))) {
-          
-          for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
-            ssc = &gh->gh_ss->ss_components[i];
-            if (ssc->ssc_disabled && gh_is_audiovideo(ssc->es_type)) {
-              ssc->ssc_disabled = 0;
-              /* Clear cached headers to force rebuilding from descrambled stream */
-              if(ssc->ssc_gh != NULL) {
-                pktbuf_ref_dec(ssc->ssc_gh);
-                ssc->ssc_gh = NULL;
-              }
-              reenabled++;
-              tvhdebug(LS_GLOBALHEADERS, "gh re-enable stream %d %s%s%s (PID %i) after successful ECM (ecmtime=%d, retry %d/%d)",
-                   ssc->es_index, streaming_component_type2txt(ssc->es_type),
-                   ssc->es_lang[0] ? " " : "", ssc->es_lang, ssc->es_pid,
-                   di->ecmtime, gh->gh_retry_count + 1, MAX_RETRY_COUNT);
-            }
-          }
-          
-          if (reenabled > 0) {
-            gh->gh_retry_count++;
-            gh->gh_last_retry_time = now;
-            gh->gh_streams_were_disabled = 0; /* Reset flag after successful re-enable */
-            tvhinfo(LS_GLOBALHEADERS, "Re-enabled %d streams after successful descrambling (attempt %d/%d, ecmtime=%dms)",
-                    reenabled, gh->gh_retry_count, MAX_RETRY_COUNT, di->ecmtime);
-          }
-        }
+        /* Keys successfully received - attempt to re-enable disabled streams */
+        gh_handle_descramble_retry(gh, di);
       }
     }
     streaming_target_deliver2(gh->gh_output, sm);
