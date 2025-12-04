@@ -562,20 +562,20 @@ tsfix_input_packet(tsfix_t *tf, streaming_message_t *sm)
     return;
   }
 
-  /* Fix 1: Reset tf_wait_for_video when valid video packet with payload arrives */
+  /* Fix 1: Reset tf_wait_for_video when valid video packet with payload arrives.
+   * While waiting for valid video, drop video packets without payload but allow
+   * non-video packets (audio, subtitles) to pass through to avoid dropping audio. */
   if (tf->tf_wait_for_video) {
     if (tfs->tfs_video) {
       if (pkt->pkt_payload != NULL) {
         tvhtrace(LS_TSFIX, "Valid video packet received, clearing tf_wait_for_video flag");
         tf->tf_wait_for_video = 0;
-        /* Continue processing this video packet normally */
       } else {
         /* Video packet without payload - still waiting, drop it */
         tsfix_packet_drop(tfs, pkt, "wait for video payload");
         return;
       }
     }
-    /* Non-video packets (audio, subtitles) are allowed through even while waiting for video */
   }
 
   if (tf->tf_tsref == PTS_UNSET && pkt->pkt_dts != PTS_UNSET &&
