@@ -399,6 +399,25 @@ cc_ecm_idle(th_descrambler_t *th)
 }
 
 /**
+ * Called when CAID/PID configuration changes (e.g., during regional/national broadcast switches)
+ * Forces immediate ECM reset to request new keys for changed PIDs
+ */
+static void
+cc_caid_change(th_descrambler_t *th)
+{
+  cc_service_t *ct = (cc_service_t *)th;
+  cclient_t *cc = ct->cs_client;
+  mpegts_service_t *t = (mpegts_service_t *)th->td_service;
+
+  tvh_mutex_lock(&cc->cc_mutex);
+  /* Force ECM reset to trigger immediate key request for new PIDs */
+  ct->ecm_state = ECM_RESET;
+  tvhdebug(cc->cc_subsys, "%s: CAID/PID change detected for service \"%s\", forcing ECM reset",
+           cc->cc_name, t->s_dvb_svcname);
+  tvh_mutex_unlock(&cc->cc_mutex);
+}
+
+/**
  *
  */
 void
@@ -1196,6 +1215,7 @@ cc_service_start(caclient_t *cac, service_t *t)
   td->td_nicename      = strdup(buf);
   td->td_service       = t;
   td->td_stop          = cc_service_destroy;
+  td->td_caid_change   = cc_caid_change;
   td->td_ecm_reset     = cc_ecm_reset;
   td->td_ecm_idle      = cc_ecm_idle;
   LIST_INSERT_HEAD(&t->s_descramblers, td, td_service_link);
