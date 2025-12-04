@@ -4625,14 +4625,29 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
 
   switch(sm->sm_type) {
   case SMT_PACKET:
-    if (hs->hs_wait_for_video)
-      break;
-    if (!hs->hs_first)
-      tvhdebug(LS_HTSP, "%s - first packet", hs->hs_htsp->htsp_logname);
-    hs->hs_first = 1;
-    htsp_stream_deliver(hs, sm->sm_data);
-    // reference is transferred
-    sm->sm_data = NULL;
+    {
+      th_pkt_t *pkt = sm->sm_data;
+      
+      /* Reset wait_for_video if we receive a valid video packet with payload.
+       * This ensures packets flow even if TSS_PACKETS service status is delayed
+       * during encrypted stream switches (e.g., ORF2K Regional→National). */
+      if (hs->hs_wait_for_video && pkt != NULL && pkt->pkt_payload != NULL) {
+        if (SCT_ISVIDEO(pkt->pkt_type)) {
+          tvhdebug(LS_HTSP, "%s - valid video packet received, clearing wait_for_video",
+                   hs->hs_htsp->htsp_logname);
+          hs->hs_wait_for_video = 0;
+        }
+      }
+      
+      if (hs->hs_wait_for_video)
+        break;
+      if (!hs->hs_first)
+        tvhdebug(LS_HTSP, "%s - first packet", hs->hs_htsp->htsp_logname);
+      hs->hs_first = 1;
+      htsp_stream_deliver(hs, sm->sm_data);
+      // reference is transferred
+      sm->sm_data = NULL;
+    }
     break;
 
   case SMT_START:
