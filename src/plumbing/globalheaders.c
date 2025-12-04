@@ -301,6 +301,26 @@ gh_should_retry(globalheaders_t *gh)
 }
 
 /**
+ * Re-enable previously disabled audio/video streams for retry
+ */
+static void
+gh_reenable_streams(globalheaders_t *gh, const char *reason)
+{
+  int i;
+  streaming_start_component_t *comp;
+  
+  for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
+    comp = &gh->gh_ss->ss_components[i];
+    if (comp->ssc_disabled && gh_is_audiovideo(comp->es_type)) {
+      comp->ssc_disabled = 0;
+      tvhtrace(LS_GLOBALHEADERS, "gh retry: re-enabling stream %d %s (PID %i) %s",
+               comp->es_index, streaming_component_type2txt(comp->es_type), 
+               comp->es_pid, reason);
+    }
+  }
+}
+
+/**
  *
  */
 static void
@@ -379,15 +399,7 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
                  gh->gh_retry_count, MAX_RETRY_COUNT);
         
         /* Re-enable previously disabled streams to give them another chance */
-        int i;
-        for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
-          streaming_start_component_t *comp = &gh->gh_ss->ss_components[i];
-          if (comp->ssc_disabled && gh_is_audiovideo(comp->es_type)) {
-            comp->ssc_disabled = 0;
-            tvhtrace(LS_GLOBALHEADERS, "gh retry: re-enabling stream %d %s (PID %i)",
-                     comp->es_index, streaming_component_type2txt(comp->es_type), comp->es_pid);
-          }
-        }
+        gh_reenable_streams(gh, "after valid packet");
         /* Clear the flag so we check headers again */
         gh->gh_streams_were_disabled = 0;
       }
@@ -425,25 +437,17 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
 
   case SMT_DESCRAMBLE_INFO:
     /* When descramble info arrives and streams were disabled, check if we should retry */
-    if (gh->gh_streams_were_disabled && gh_should_retry(gh)) {
+    if (gh->gh_streams_were_disabled && gh_should_retry(gh) && sm->sm_data != NULL) {
       descramble_info_t *di = sm->sm_data;
       /* If we have valid descrambler info (ecmtime indicates successful decryption), attempt retry */
-      if (di && di->ecmtime > 0) {
+      if (di->ecmtime > 0) {
         gh->gh_retry_count++;
         gh->gh_last_retry_time = mclk();
         tvhdebug(LS_GLOBALHEADERS, "gh retry %d/%d: descrambler keys available (ecmtime=%dms), re-enabling streams",
                  gh->gh_retry_count, MAX_RETRY_COUNT, di->ecmtime);
         
         /* Re-enable previously disabled streams */
-        int i;
-        for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
-          streaming_start_component_t *comp = &gh->gh_ss->ss_components[i];
-          if (comp->ssc_disabled && gh_is_audiovideo(comp->es_type)) {
-            comp->ssc_disabled = 0;
-            tvhtrace(LS_GLOBALHEADERS, "gh retry: re-enabling stream %d %s (PID %i) after key notification",
-                     comp->es_index, streaming_component_type2txt(comp->es_type), comp->es_pid);
-          }
-        }
+        gh_reenable_streams(gh, "after key notification");
         gh->gh_streams_were_disabled = 0;
       }
     }
