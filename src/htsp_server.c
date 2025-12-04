@@ -4289,18 +4289,20 @@ htsp_subscription_start(htsp_subscription_t *hs, const streaming_start_t *ss)
 
   tvhdebug(LS_HTSP, "%s - subscription start", hs->hs_htsp->htsp_logname);
 
+  /* Check if video dimensions are unknown */
+  hs->hs_wait_for_video = 0;
   for(i = 0; i < ss->ss_num_components; i++) {
     const streaming_start_component_t *ssc = &ss->ss_components[i];
     if (ssc->ssc_disabled) continue;
     if (SCT_ISVIDEO(ssc->es_type)) {
       if (ssc->es_width == 0 || ssc->es_height == 0) {
         hs->hs_wait_for_video = 1;
-        return;
+        tvhdebug(LS_HTSP, "%s - video 0x0, wait_for_video=1 but sending subscriptionStart", 
+                 hs->hs_htsp->htsp_logname);
       }
       break;
     }
   }
-  hs->hs_wait_for_video = 0;
 
   m = htsmsg_create_map();
   streams = htsmsg_create_list();
