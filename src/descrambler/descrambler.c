@@ -534,8 +534,8 @@ descrambler_caid_changed ( service_t *t )
       tk->key_start = 0;
       /* Clear the PID association so keys are reassigned to new PIDs */
       tk->key_pid = 0;
-      /* dr_key_multipid: when false, only use first key slot (dr_keys[0]);
-       * when true, support multiple PID-specific keys in dr_keys[] array */
+      /* When multipid is disabled, only reset first key slot (dr_keys[0]).
+       * When enabled, reset all key slots to handle multiple PID-specific keys. */
       if (!dr->dr_key_multipid) break;
     }
     /* Reset ECM start times to force new ECM requests */
