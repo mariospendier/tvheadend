@@ -524,7 +524,7 @@ descrambler_caid_changed ( service_t *t )
   dr = t->s_descramble;
   if (dr) {
     tvhtrace(LS_DESCRAMBLER, "CAID/PID changed for service \"%s\", resetting key structures",
-             ((mpegts_service_t *)t)->s_dvb_svcname);
+             t->s_nicename);
     for (i = 0; i < DESCRAMBLER_MAX_KEYS; i++) {
       tk = &dr->dr_keys[i];
       /* Reset key validity but keep the key structures for re-initialization */
@@ -534,6 +534,8 @@ descrambler_caid_changed ( service_t *t )
       tk->key_start = 0;
       /* Clear the PID association so keys are reassigned to new PIDs */
       tk->key_pid = 0;
+      /* dr_key_multipid: when false, only use first key slot (dr_keys[0]);
+       * when true, support multiple PID-specific keys in dr_keys[] array */
       if (!dr->dr_key_multipid) break;
     }
     /* Reset ECM start times to force new ECM requests */
