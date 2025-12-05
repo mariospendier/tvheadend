@@ -410,11 +410,24 @@ cc_caid_change(th_descrambler_t *th)
   mpegts_service_t *t = (mpegts_service_t *)th->td_service;
 
   tvh_mutex_lock(&cc->cc_mutex);
-  /* Force ECM reset to trigger immediate key request for new PIDs */
-  ct->ecm_state = ECM_RESET;
-  tvhdebug(cc->cc_subsys, "%s: CAID/PID change detected for service \"%s\", forcing ECM reset",
+  
+  /* Clear all ECM PIDs to force complete re-scan */
+  cc_service_ecm_pid_free(ct);
+  
+  /* Reset ECM state to initial */
+  ct->ecm_state = ECM_INIT;
+  ct->cs_capid = 0xffff;
+  
+  /* Clear preferred CA PID to allow re-detection */
+  t->s_dvb_prefcapid = 0;
+  
+  tvhdebug(cc->cc_subsys, "%s: CAID/PID change detected for service \"%s\", forcing ECM re-initialization",
            cc->cc_name, t->s_dvb_svcname);
+  
   tvh_mutex_unlock(&cc->cc_mutex);
+  
+  /* Flush table data to trigger immediate ECM processing on next packet */
+  descrambler_flush_table_data(th->td_service);
 }
 
 /**

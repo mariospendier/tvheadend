@@ -517,17 +517,25 @@ descrambler_caid_changed ( service_t *t )
       td->td_caid_change(td);
   }
 
-  /* Fix 3: Reset key structures on CAID/PID changes.
+  /* Reset key structures on CAID/PID changes.
    * When PIDs change (e.g., Regional→National switch), the descrambler
-   * needs to reset key structures to force re-request of ECM keys for new PIDs. */
+   * needs to reset key structures and clear queued packets to enable
+   * immediate recovery with new keys. */
   tvh_mutex_lock(&t->s_stream_mutex);
   dr = t->s_descramble;
   if (dr) {
-    tvhtrace(LS_DESCRAMBLER, "CAID/PID changed for service \"%s\", resetting key structures",
+    th_descrambler_data_t *dd;
+    
+    tvhdebug(LS_DESCRAMBLER, "CAID/PID changed for service \"%s\", resetting descrambler state",
              t->s_nicename);
+    
+    /* Clear queued packets from old PID configuration to prevent blocking recovery */
+    while ((dd = TAILQ_FIRST(&dr->dr_queue)) != NULL)
+      descrambler_data_destroy(dr, dd, 0);
+    
     for (i = 0; i < DESCRAMBLER_MAX_KEYS; i++) {
       tk = &dr->dr_keys[i];
-      /* Reset key validity but keep the key structures for re-initialization */
+      /* Reset key validity to force new key requests */
       tk->key_valid = 0;
       tk->key_timestamp[0] = 0;
       tk->key_timestamp[1] = 0;
@@ -544,6 +552,9 @@ descrambler_caid_changed ( service_t *t )
     dr->dr_ecm_last_key_time = 0;
     /* Clear last key pointer to force reselection */
     dr->dr_key_last = NULL;
+    /* Reset skip flag to allow packet processing */
+    dr->dr_skip = 0;
+    dr->dr_force_skip = 0;
   }
   tvh_mutex_unlock(&t->s_stream_mutex);
 }
