@@ -32,12 +32,19 @@ typedef struct globalheaders {
 
   int gh_passthru;
 
+  /* Retry mechanism for encrypted stream switches (PR #9) */
+  int gh_retry_count;           /* Number of retry attempts (max 3) */
+  int64_t gh_last_retry_time;   /* Timestamp of last retry attempt */
+  int gh_streams_were_disabled; /* Flag indicating streams were disabled */
+
 } globalheaders_t;
 
 /* note: there up to 2.5 sec diffs in some sources! */
 /* increased timeouts to allow descrambler time to request new ECM keys during PMT changes */
-#define MAX_SCAN_TIME   15000  // in ms (was 5000)
+#define MAX_SCAN_TIME   20000  // in ms (was 5000, then 15000) - PR #9: up to 20s for retry mechanism
 #define MAX_NOPKT_TIME  7500   // in ms (was 2500)
+#define MAX_RETRY_COUNT 3      // Maximum number of retry attempts
+#define RETRY_INTERVAL  5000   // Retry interval in ms (5 seconds)
 
 /**
  *
@@ -240,6 +247,7 @@ headers_complete(globalheaders_t *gh)
        */
       if(threshold || (qd[i] <= 0 && qd_max > (MAX_NOPKT_TIME * 90))) {
 	ssc->ssc_disabled = 1;
+        gh->gh_streams_were_disabled = 1; /* Track that streams were disabled for retry mechanism */
         tvhdebug(LS_GLOBALHEADERS, "gh disable stream %d %s%s%s (PID %i) threshold %d qd %"PRId64" qd_max %"PRId64,
              ssc->es_index, streaming_component_type2txt(ssc->es_type),
              ssc->es_lang[0] ? " " : "", ssc->es_lang, ssc->es_pid,
@@ -278,6 +286,11 @@ gh_start(globalheaders_t *gh, streaming_message_t *sm)
   
   gh->gh_ss = streaming_start_copy(sm->sm_data);
   
+  /* Reset retry mechanism counters on stream start */
+  gh->gh_retry_count = 0;
+  gh->gh_last_retry_time = 0;
+  gh->gh_streams_were_disabled = 0;
+  
   /* Reset disabled flags and clear cached headers to give all streams a fresh chance on stream reconfiguration */
   for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
     ssc = &gh->gh_ss->ss_components[i];
@@ -296,6 +309,61 @@ gh_start(globalheaders_t *gh, streaming_message_t *sm)
   streaming_msg_free(sm);
 }
 
+
+/**
+ * PR #9: Handle retry mechanism for encrypted stream switches
+ * Re-enable disabled streams when successful descrambling is detected
+ */
+static void
+gh_handle_descramble_retry(globalheaders_t *gh, descramble_info_t *di)
+{
+  streaming_start_component_t *ssc;
+  int64_t now = getfastmonoclock();
+  int i, reenabled = 0, still_disabled = 0;
+  
+  /* Check if we should attempt a retry */
+  if (gh->gh_retry_count >= MAX_RETRY_COUNT) {
+    /* Max retries reached, give up */
+    return;
+  }
+  
+  if (gh->gh_last_retry_time != 0 && 
+      (now - gh->gh_last_retry_time) < ms2mono(RETRY_INTERVAL)) {
+    /* Not enough time has passed since last retry */
+    return;
+  }
+  
+  /* Re-enable all disabled audio/video streams and clear their cached headers */
+  for(i = 0; i < gh->gh_ss->ss_num_components; i++) {
+    ssc = &gh->gh_ss->ss_components[i];
+    if (ssc->ssc_disabled && gh_is_audiovideo(ssc->es_type)) {
+      ssc->ssc_disabled = 0;
+      /* Clear cached headers to force rebuilding from descrambled stream */
+      if(ssc->ssc_gh != NULL) {
+        pktbuf_ref_dec(ssc->ssc_gh);
+        ssc->ssc_gh = NULL;
+      }
+      reenabled++;
+      tvhdebug(LS_GLOBALHEADERS, "gh re-enable stream %d %s%s%s (PID %i) after successful ECM (ecmtime=%d, retry %d/%d)",
+           ssc->es_index, streaming_component_type2txt(ssc->es_type),
+           ssc->es_lang[0] ? " " : "", ssc->es_lang, ssc->es_pid,
+           di->ecmtime, gh->gh_retry_count + 1, MAX_RETRY_COUNT);
+    } else if (ssc->ssc_disabled) {
+      still_disabled++;
+    }
+  }
+  
+  if (reenabled > 0) {
+    gh->gh_retry_count++;
+    gh->gh_last_retry_time = now;
+    /* Only reset the flag if all streams are now enabled or we've reached max retries */
+    if (still_disabled == 0 || gh->gh_retry_count >= MAX_RETRY_COUNT) {
+      gh->gh_streams_were_disabled = 0;
+    }
+    tvhinfo(LS_GLOBALHEADERS, "Re-enabled %d streams after successful descrambling (attempt %d/%d, ecmtime=%dms)",
+            reenabled, gh->gh_retry_count, MAX_RETRY_COUNT, di->ecmtime);
+  }
+}
 
 /**
  *
@@ -361,11 +429,22 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
     streaming_msg_free(sm);
     break;
 
+  case SMT_DESCRAMBLE_INFO:
+    /* PR #9: Re-enable streams on successful descrambling after they were disabled */
+    if (gh->gh_streams_were_disabled && gh->gh_ss) {
+      descramble_info_t *di = sm->sm_data;
+      if (di && di->ecmtime > 0) {
+        /* Keys successfully received - attempt to re-enable disabled streams */
+        gh_handle_descramble_retry(gh, di);
+      }
+    }
+    streaming_target_deliver2(gh->gh_output, sm);
+    break;
+
   case SMT_GRACE:
   case SMT_EXIT:
   case SMT_SERVICE_STATUS:
   case SMT_SIGNAL_STATUS:
-  case SMT_DESCRAMBLE_INFO:
   case SMT_NOSTART:
   case SMT_NOSTART_WARN:
   case SMT_MPEGTS:
