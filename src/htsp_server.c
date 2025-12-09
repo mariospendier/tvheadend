@@ -4647,6 +4647,16 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     break;
 
   case SMT_SERVICE_STATUS:
+	if (sm->sm_type == SMT_START) {
+		streaming_start_t *ss = sm->sm_data;
+		if (hs->hs_prch.prch_timeshift) {
+    		timeshift_flush(hs->hs_prch.prch_timeshift);
+		}
+		if (ss->ss_pmt_changed || ss->ss_service_restarted) {
+			tvhinfo(LS_HTSP, "Stream restarted (PMT/PID change) – rebuilding HTSP pipeline");
+		    profile_chain_reopen(&hs->hs_prch, ss->ss_input, ss->ss_input_name);
+		}
+	}
     htsp_subscription_service_status(hs, sm->sm_code);
     break;
 
