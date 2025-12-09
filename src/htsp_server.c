@@ -4626,13 +4626,6 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     }
 
     tvhtrace(LS_HTSP, "%s - SMT_START received, resetting HTSP state", hs->hs_htsp->htsp_logname);
-
-#if ENABLE_TIMESHIFT
-    if (hs->hs_prch.prch_timeshift) {
-      tvhinfo(LS_HTSP, "Flushing timeshift buffer due to new stream (PMT/PID change)");
-      timeshift_flush(hs->hs_prch.prch_timeshift);
-    }
-#endif
 	
 	// 🩵 FIX: reset all filtered streams on new SMT_START
     memset(hs->hs_filtered_streams, 0, sizeof(hs->hs_filtered_streams));
@@ -4658,12 +4651,6 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
 
   case SMT_SERVICE_STATUS: {
   streaming_service_status_t *status = sm->sm_data;
-#if ENABLE_TIMESHIFT
-  if (status && status->ss_pmt_changed && hs->hs_prch.prch_timeshift) {
-    tvhinfo(LS_HTSP, "PMT change detected, flushing timeshift buffer");
-    timeshift_flush(hs->hs_prch.prch_timeshift);
-  }
-#endif
 
   if (status && (status->ss_pmt_changed || sm->sm_code == SERVICE_STATUS_RESTART)) {
     tvhdebug(LS_HTSP, "HTSP[%s]: Full service reset (PMT/service change)",
