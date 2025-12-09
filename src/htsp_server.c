@@ -4620,11 +4620,17 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     break;
 
   case SMT_START:
-    htsp_subscription_start(hs, sm->sm_data);
+    htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0); // Alte Queues leeren
+    hs->hs_wait_for_video = 0;                   // sicherstellen, dass neue Pakete angenommen werden
+    hs->hs_first = 1;
+	htsp_subscription_start(hs, sm->sm_data);
     break;
 
   case SMT_STOP:
-    htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
+    htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 1);
+    hs->hs_wait_for_video = 0;    // <--- Reset Video-Wait-State
+    hs->hs_first = 1;             // <--- Markiere für neuen Start
+	htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
 
