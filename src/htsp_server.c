@@ -4607,8 +4607,7 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
 {
   htsp_subscription_t *hs = opaque;
 
-  switch (sm->sm_type) {
-
+  switch(sm->sm_type) {
   case SMT_PACKET:
     if (hs->hs_wait_for_video)
       break;
@@ -4616,67 +4615,25 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
       tvhdebug(LS_HTSP, "%s - first packet", hs->hs_htsp->htsp_logname);
     hs->hs_first = 1;
     htsp_stream_deliver(hs, sm->sm_data);
-    sm->sm_data = NULL; // ownership transferred
-    break;
-
-  case SMT_START: {
-    if (!sm->sm_data) {
-      tvhwarn(LS_HTSP, "%s - SMT_START received with NULL sm_data, ignoring", hs->hs_htsp->htsp_logname);
-      break;
-    }
-
-    tvhtrace(LS_HTSP, "%s - SMT_START received, resetting HTSP state", hs->hs_htsp->htsp_logname);
-	
-	// 🩵 FIX: reset all filtered streams on new SMT_START
-    memset(hs->hs_filtered_streams, 0, sizeof(hs->hs_filtered_streams));
-    hs->hs_data_errors = 0;
-	
-    htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0);
-    hs->hs_wait_for_video = 0; // allow new packets
-    hs->hs_first = 0;
-
-    htsp_subscription_start(hs, sm->sm_data);
+    // reference is transferred
     sm->sm_data = NULL;
     break;
-  }
+
+  case SMT_START:
+    htsp_subscription_start(hs, sm->sm_data);
+    break;
 
   case SMT_STOP:
-    tvhtrace(LS_HTSP, "%s - SMT_STOP received, flushing queues and resetting flags", hs->hs_htsp->htsp_logname);
-    htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 1);
-    hs->hs_wait_for_video = 0;
-    hs->hs_first = 0;
     htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
 
-  case SMT_SERVICE_STATUS: {
-  streaming_service_status_t *status = sm->sm_data;
-
-  if (status && (status->ss_pmt_changed || sm->sm_code == SERVICE_STATUS_RESTART)) {
-    tvhdebug(LS_HTSP, "HTSP[%s]: Full service reset (PMT/service change)",
-             hs->hs_htsp->htsp_logname);
-
-    htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0);
-    hs->hs_q.hmq_dead = 0; // revive queue after flush
-	
-	// 🩵 FIX: also reset filter maps here to handle dynamic PMT changes (ORF2K)
-    memset(hs->hs_filtered_streams, 0, sizeof(hs->hs_filtered_streams));
-    hs->hs_first = 0;
-    hs->hs_wait_for_video = 0;
-    hs->hs_data_errors = 0;
-	  
-    // Schedule async restart to avoid reentrancy
-    mtimer_arm_rel(&hs->hs_s_bytes_out_timer,
-                   (mtimer_callback_t)profile_chain_restart,
-                   &hs->hs_prch, 100);
-  }
-
-  htsp_subscription_service_status(hs, sm->sm_code);
-  break;
-}
-
   case SMT_GRACE:
     htsp_subscription_grace(hs, sm->sm_code);
+    break;
+
+  case SMT_SERVICE_STATUS:
+    htsp_subscription_service_status(hs, sm->sm_code);
     break;
 
   case SMT_SIGNAL_STATUS:
@@ -4689,7 +4646,7 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
 
   case SMT_NOSTART:
   case SMT_NOSTART_WARN:
-    htsp_subscription_status(hs, streaming_code2txt(sm->sm_code),
+    htsp_subscription_status(hs,  streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
 
@@ -4713,7 +4670,6 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
 #endif
     break;
   }
-
   streaming_msg_free(sm);
 }
 
