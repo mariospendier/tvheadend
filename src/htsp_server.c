@@ -4607,7 +4607,8 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
 {
   htsp_subscription_t *hs = opaque;
 
-  switch(sm->sm_type) {
+  switch (sm->sm_type) {
+
   case SMT_PACKET:
     if (hs->hs_wait_for_video)
       break;
@@ -4615,49 +4616,56 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
       tvhdebug(LS_HTSP, "%s - first packet", hs->hs_htsp->htsp_logname);
     hs->hs_first = 1;
     htsp_stream_deliver(hs, sm->sm_data);
-    // reference is transferred
+    sm->sm_data = NULL; // ownership transferred
+    break;
+
+  case SMT_START: {
+    if (!sm->sm_data) {
+      tvhwarn(LS_HTSP, "%s - SMT_START received with NULL sm_data, ignoring", hs->hs_htsp->htsp_logname);
+      break;
+    }
+
+    tvhtrace(LS_HTSP, "%s - SMT_START received, resetting HTSP state", hs->hs_htsp->htsp_logname);
+
+#if ENABLE_TIMESHIFT
+    if (hs->hs_prch.prch_timeshift) {
+      tvhinfo(LS_HTSP, "Flushing timeshift buffer due to new stream (PMT/PID change)");
+      timeshift_flush(hs->hs_prch.prch_timeshift);
+    }
+#endif
+
+    htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0);
+    hs->hs_wait_for_video = 0; // allow new packets
+    hs->hs_first = 0;
+
+    htsp_subscription_start(hs, sm->sm_data);
     sm->sm_data = NULL;
     break;
-
-  case SMT_START:
-	if (!sm->sm_data) {
-  		tvhwarn(LS_HTSP, "%s - SMT_START received with NULL sm_data, ignoring", hs->hs_htsp->htsp_logname);
-  		break;
-	}
-    tvhtrace(LS_HTSP, "%s - SMT_START received, resetting HTSP state", hs->hs_htsp->htsp_logname);
-	htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0); // Alte Queues leeren
-    hs->hs_wait_for_video = 0;                   // sicherstellen, dass neue Pakete angenommen werden
-    hs->hs_first = 1;
-	htsp_subscription_start(hs, sm->sm_data);
-	sm->sm_data = NULL;
-	hs->hs_wait_for_video = 1;
-    break;
+  }
 
   case SMT_STOP:
-	tvhtrace(LS_HTSP, "%s - SMT_STOP received, flushing queues and resetting flags", hs->hs_htsp->htsp_logname);
+    tvhtrace(LS_HTSP, "%s - SMT_STOP received, flushing queues and resetting flags", hs->hs_htsp->htsp_logname);
     htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 1);
-    hs->hs_wait_for_video = 0;    // <--- Reset Video-Wait-State
-    hs->hs_first = 1;             // <--- Markiere für neuen Start
-	htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
+    hs->hs_wait_for_video = 0;
+    hs->hs_first = 0;
+    htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
 
+  case SMT_SERVICE_STATUS: {
+    streaming_service_status_t *status = sm->sm_data;
+#if ENABLE_TIMESHIFT
+    if (status && status->ss_pmt_changed && hs->hs_prch.prch_timeshift) {
+      tvhinfo(LS_HTSP, "PMT change detected, flushing timeshift buffer");
+      timeshift_flush(hs->hs_prch.prch_timeshift);
+    }
+#endif
+    htsp_subscription_service_status(hs, sm->sm_code);
+    break;
+  }
+
   case SMT_GRACE:
     htsp_subscription_grace(hs, sm->sm_code);
-    break;
-
-  case SMT_SERVICE_STATUS:
-	if (sm->sm_type == SMT_START) {
-		streaming_start_t *ss = sm->sm_data;
-		if (hs->hs_prch.prch_timeshift) {
-    		timeshift_flush(hs->hs_prch.prch_timeshift);
-		}
-		if (ss->ss_pmt_changed || ss->ss_service_restarted) {
-			tvhinfo(LS_HTSP, "Stream restarted (PMT/PID change) – rebuilding HTSP pipeline");
-		    profile_chain_reopen(&hs->hs_prch, ss->ss_input, ss->ss_input_name);
-		}
-	}
-    htsp_subscription_service_status(hs, sm->sm_code);
     break;
 
   case SMT_SIGNAL_STATUS:
@@ -4670,7 +4678,7 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
 
   case SMT_NOSTART:
   case SMT_NOSTART_WARN:
-    htsp_subscription_status(hs,  streaming_code2txt(sm->sm_code),
+    htsp_subscription_status(hs, streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
 
@@ -4694,6 +4702,7 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
 #endif
     break;
   }
+
   streaming_msg_free(sm);
 }
 
