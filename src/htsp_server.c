@@ -4620,13 +4620,16 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     break;
 
   case SMT_START:
-    htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0); // Alte Queues leeren
+    tvhdebug(LS_HTSP, "%s - SMT_START received, resetting HTSP state", hs->hs_htsp->htsp_logname);
+	htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0); // Alte Queues leeren
     hs->hs_wait_for_video = 0;                   // sicherstellen, dass neue Pakete angenommen werden
     hs->hs_first = 1;
 	htsp_subscription_start(hs, sm->sm_data);
+	hs->hs_wait_for_video = 1;
     break;
 
   case SMT_STOP:
+	tvhdebug(LS_HTSP, "%s - SMT_STOP received, flushing queues and resetting flags", hs->hs_htsp->htsp_logname);
     htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 1);
     hs->hs_wait_for_video = 0;    // <--- Reset Video-Wait-State
     hs->hs_first = 1;             // <--- Markiere für neuen Start
