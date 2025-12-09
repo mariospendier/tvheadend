@@ -4653,16 +4653,34 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     break;
 
   case SMT_SERVICE_STATUS: {
-    streaming_service_status_t *status = sm->sm_data;
+  streaming_service_status_t *status = sm->sm_data;
 #if ENABLE_TIMESHIFT
-    if (status && status->ss_pmt_changed && hs->hs_prch.prch_timeshift) {
-      tvhinfo(LS_HTSP, "PMT change detected, flushing timeshift buffer");
-      timeshift_flush(hs->hs_prch.prch_timeshift);
-    }
-#endif
-    htsp_subscription_service_status(hs, sm->sm_code);
-    break;
+  if (status && status->ss_pmt_changed && hs->hs_prch.prch_timeshift) {
+    tvhinfo(LS_HTSP, "PMT change detected, flushing timeshift buffer");
+    timeshift_flush(hs->hs_prch.prch_timeshift);
   }
+#endif
+
+  if (status && (status->ss_pmt_changed || sm->sm_code == SERVICE_STATUS_RESTART)) {
+    tvhdebug(LS_HTSP, "HTSP[%s]: Full service reset (PMT/service change)",
+             hs->hs_htsp->htsp_logname);
+
+    htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0);
+    hs->hs_q.hmq_dead = 0; // revive queue after flush
+    memset(hs->hs_filtered_streams, 0, sizeof(hs->hs_filtered_streams));
+    hs->hs_first = 0;
+    hs->hs_wait_for_video = 0;
+    hs->hs_data_errors = 0;
+
+    // Schedule async restart to avoid reentrancy
+    mtimer_arm_rel(&hs->hs_s_bytes_out_timer,
+                   (mtimer_callback_t)profile_chain_restart,
+                   &hs->hs_prch, 100);
+  }
+
+  htsp_subscription_service_status(hs, sm->sm_code);
+  break;
+}
 
   case SMT_GRACE:
     htsp_subscription_grace(hs, sm->sm_code);
