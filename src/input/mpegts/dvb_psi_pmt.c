@@ -646,12 +646,14 @@ dvb_pmt_callback
                    PMT_UPDATE_NEW_CAID |
                    PMT_UPDATE_CA_PROVIDER_CHANGE |
                    PMT_UPDATE_CAID_DELETED |
-                   PMT_UPDATE_CAID_PID)) {
+                   PMT_UPDATE_CAID_PID |
+                   PMT_UPDATE_PCR |
+                   PMT_REORDERED)) {
       restart = s->s_status == SERVICE_RUNNING;
       tvhdebug(mt->mt_subsys, "%s: PMT restart decision - update=0x%08X service_status=%d restart=%d",
                mt->mt_name, update, s->s_status, restart);
     } else {
-      tvhdebug(mt->mt_subsys, "%s: PMT CA-only update - update=0x%08X service_status=%d no_restart",
+      tvhdebug(mt->mt_subsys, "%s: PMT CA/PCR/reorder-only update - update=0x%08X service_status=%d no_restart",
                mt->mt_name, update, s->s_status);
     }
   }
