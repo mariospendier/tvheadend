@@ -4370,6 +4370,8 @@ htsp_subscription_start(htsp_subscription_t *hs, const streaming_start_t *ss)
 
   htsmsg_add_str(m, "method", "subscriptionStart");
   htsmsg_add_u32(m, "subscriptionId", hs->hs_sid);
+  tvhinfo(LS_HTSP, "%s - sending subscriptionStart message for sid %d", 
+          hs->hs_htsp->htsp_logname, hs->hs_sid);
   htsp_send_subscription(hs->hs_htsp, m, NULL, hs, 0);
 }
 
@@ -4620,32 +4622,48 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     break;
 
   case SMT_START:
+    tvhinfo(LS_HTSP, "%s - received SMT_START for sid %d", 
+            hs->hs_htsp->htsp_logname, hs->hs_sid);
     htsp_subscription_start(hs, sm->sm_data);
     break;
 
   case SMT_STOP:
+    tvhinfo(LS_HTSP, "%s - received SMT_STOP (code=%d) for sid %d", 
+            hs->hs_htsp->htsp_logname, sm->sm_code, hs->hs_sid);
     htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
 
   case SMT_GRACE:
+    tvhdebug(LS_HTSP, "%s - received SMT_GRACE (delay=%d) for sid %d", 
+             hs->hs_htsp->htsp_logname, sm->sm_code, hs->hs_sid);
     htsp_subscription_grace(hs, sm->sm_code);
     break;
 
   case SMT_SERVICE_STATUS:
+    tvhdebug(LS_HTSP, "%s - received SMT_SERVICE_STATUS (code=%d) for sid %d", 
+             hs->hs_htsp->htsp_logname, sm->sm_code, hs->hs_sid);
     htsp_subscription_service_status(hs, sm->sm_code);
     break;
 
   case SMT_SIGNAL_STATUS:
+    tvhdebug(LS_HTSP, "%s - received SMT_SIGNAL_STATUS for sid %d", 
+             hs->hs_htsp->htsp_logname, hs->hs_sid);
     htsp_subscription_signal_status(hs, sm->sm_data);
     break;
 
   case SMT_DESCRAMBLE_INFO:
+    tvhdebug(LS_HTSP, "%s - received SMT_DESCRAMBLE_INFO for sid %d", 
+             hs->hs_htsp->htsp_logname, hs->hs_sid);
     htsp_subscription_descramble_info(hs, sm->sm_data);
     break;
 
   case SMT_NOSTART:
   case SMT_NOSTART_WARN:
+    tvhinfo(LS_HTSP, "%s - received %s (code=%d) for sid %d", 
+            hs->hs_htsp->htsp_logname, 
+            sm->sm_type == SMT_NOSTART ? "SMT_NOSTART" : "SMT_NOSTART_WARN",
+            sm->sm_code, hs->hs_sid);
     htsp_subscription_status(hs,  streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;

@@ -260,9 +260,14 @@ dvb_psi_parse_pmt
   pcr_pid = extract_pid(ptr + 5);
   dllen   = (ptr[7] & 0xf) << 8 | ptr[8];
   
+  tvhdebug(mt->mt_subsys, "%s: PMT parse - version %d, old_pcr_pid %04X, new_pcr_pid %04X",
+           mt->mt_name, version, set->set_pcr_pid, pcr_pid);
+  
   if(set->set_pcr_pid != pcr_pid) {
     set->set_pcr_pid = pcr_pid;
     update |= PMT_UPDATE_PCR;
+    tvhdebug(mt->mt_subsys, "%s: PMT PCR PID change detected: %04X -> %04X",
+             mt->mt_name, set->set_pcr_pid, pcr_pid);
   }
   tvhdebug(mt->mt_subsys, "%s:  pcr_pid %04X", mt->mt_name, pcr_pid);
 
@@ -642,6 +647,11 @@ dvb_pmt_callback
                    PMT_UPDATE_CAID_DELETED |
                    PMT_UPDATE_CAID_PID)) {
       restart = s->s_status == SERVICE_RUNNING;
+      tvhdebug(mt->mt_subsys, "%s: PMT restart decision - update=0x%08X service_status=%d restart=%d",
+               mt->mt_name, update, s->s_status, restart);
+    } else {
+      tvhdebug(mt->mt_subsys, "%s: PMT CA-only update - update=0x%08X service_status=%d no_restart",
+               mt->mt_name, update, s->s_status);
     }
   }
   /* autoenable */
@@ -650,8 +660,11 @@ dvb_pmt_callback
     s->s_verified = 1;
   }
   tvh_mutex_unlock(&s->s_stream_mutex);
-  if (restart)
+  if (restart) {
+    tvhinfo(LS_MPEGTS, "%s: PMT triggering service restart for sid %04X (%s)",
+            mt->mt_name, sid, service_nicename((service_t *)s));
     service_restart((service_t*)s);
+  }
   if (update & (PMT_UPDATE_NEW_CA_STREAM|PMT_UPDATE_NEW_CAID|
                 PMT_UPDATE_CAID_DELETED|PMT_UPDATE_CAID_PID))
     descrambler_caid_changed((service_t *)s);
