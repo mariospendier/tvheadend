@@ -289,7 +289,7 @@ timeshift_file_t *timeshift_filemgr_get ( timeshift_t *ts, int64_t start_time )
           timeshift_filemgr_remove(ts, tsf_hd, 0);
           tsf_hd = NULL;
         } else {
-          tvhdebug(LS_TIMESHIFT, "ts %d buffer full", ts->id);
+          tvhinfo(LS_TIMESHIFT, "ts %d buffer full (period limit exceeded)", ts->id);
           ts->full = 1;
         }
       }
@@ -297,7 +297,7 @@ timeshift_file_t *timeshift_filemgr_get ( timeshift_t *ts, int64_t start_time )
 
     /* Check size */
     if (!timeshift_conf.unlimited_size &&
-        atomic_pre_add_u64(&timeshift_conf.total_size, 0) >= timeshift_conf.max_size) {
+        atomic_get_u64(&timeshift_conf.total_size) >= timeshift_conf.max_size) {
 
       /* Remove the last file (if we can) */
       if (tsf_hd && !tsf_hd->refcount) {
@@ -305,7 +305,8 @@ timeshift_file_t *timeshift_filemgr_get ( timeshift_t *ts, int64_t start_time )
 
       /* Full */
       } else {
-        tvhdebug(LS_TIMESHIFT, "ts %d buffer full", ts->id);
+        tvhinfo(LS_TIMESHIFT, "ts %d buffer full (size limit) - total_size=%"PRIu64" max_size=%"PRIu64,
+                ts->id, atomic_get_u64(&timeshift_conf.total_size), timeshift_conf.max_size);
         ts->full = 1;
       }
     }

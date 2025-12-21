@@ -339,8 +339,15 @@ subscription_start_instance
                              s->ths_flags, s->ths_timeout,
                              mclk() > s->ths_postpone_end ?
                                0 : mono2sec(s->ths_postpone_end - mclk()));
-  if (si && (s->ths_flags & SUBSCRIPTION_CONTACCESS) == 0)
-    mtimer_arm_rel(&s->ths_ca_check_timer, subscription_ca_check_cb, s, s->ths_ca_timeout);
+  if (si) {
+    tvhdebug(LS_SUBSCRIPTION, "%04X: subscription_start_instance found instance for service %s",
+             shortid(s), si->si_s->s_nicename);
+    if ((s->ths_flags & SUBSCRIPTION_CONTACCESS) == 0)
+      mtimer_arm_rel(&s->ths_ca_check_timer, subscription_ca_check_cb, s, s->ths_ca_timeout);
+  } else {
+    tvhdebug(LS_SUBSCRIPTION, "%04X: subscription_start_instance failed, error=%d",
+             shortid(s), error ? *error : -1);
+  }
   return s->ths_current_instance = si;
 }
 
@@ -421,25 +428,30 @@ subscription_reschedule(void)
       }
       if (s->ths_flags & SUBSCRIPTION_RESTART) {
         if (s->ths_channel)
-          tvhwarn(LS_SUBSCRIPTION, "%04X: restarting channel %s",
-                  shortid(s), channel_get_name(s->ths_channel, channel_blank_name));
+          tvhwarn(LS_SUBSCRIPTION, "%04X: SUBSCRIPTION_RESTART flag set - restarting channel %s (error=%d)",
+                  shortid(s), channel_get_name(s->ths_channel, channel_blank_name), error);
         else
-          tvhwarn(LS_SUBSCRIPTION, "%04X: restarting service %s",
-                  shortid(s), s->ths_service->s_nicename);
+          tvhwarn(LS_SUBSCRIPTION, "%04X: SUBSCRIPTION_RESTART flag set - restarting service %s (error=%d)",
+                  shortid(s), s->ths_service->s_nicename, error);
         s->ths_testing_error = 0;
         s->ths_current_instance = NULL;
         service_instance_list_clear(&s->ths_instances);
         sm = streaming_msg_create_code(SMT_NOSTART_WARN, error);
+        tvhdebug(LS_SUBSCRIPTION, "%04X: sending SMT_NOSTART_WARN to client", shortid(s));
         streaming_target_deliver(s->ths_output, sm);
         continue;
       }
       /* No service available */
+      tvhdebug(LS_SUBSCRIPTION, "%04X: no service instance available, sending SMT_NOSTART (error=%d)",
+               shortid(s), error);
       sm = streaming_msg_create_code(SMT_NOSTART, error);
       streaming_target_deliver(s->ths_output, sm);
       subscription_show_none(s);
       continue;
     }
 
+    tvhdebug(LS_SUBSCRIPTION, "%04X: subscription_start_instance succeeded for service %s",
+             shortid(s), si->si_s->s_nicename);
     subscription_link_service(s, si->si_s);
     subscription_show_info(s);
   }
@@ -800,8 +812,10 @@ subscription_create
     s->ths_weight = weight;
 
   if (pro) {
-    if (pro->pro_restart)
+    if (pro->pro_restart) {
       s->ths_flags |= SUBSCRIPTION_RESTART;
+      tvhdebug(LS_SUBSCRIPTION, "subscription %p: SUBSCRIPTION_RESTART flag set from profile", s);
+    }
     if (pro->pro_contaccess)
       s->ths_flags |= SUBSCRIPTION_CONTACCESS;
     if (pro->pro_swservice)
