@@ -264,10 +264,11 @@ dvb_psi_parse_pmt
            mt->mt_name, version, set->set_pcr_pid, pcr_pid);
   
   if(set->set_pcr_pid != pcr_pid) {
+    uint16_t old_pcr_pid = set->set_pcr_pid;
     set->set_pcr_pid = pcr_pid;
     update |= PMT_UPDATE_PCR;
     tvhdebug(mt->mt_subsys, "%s: PMT PCR PID change detected: %04X -> %04X",
-             mt->mt_name, set->set_pcr_pid, pcr_pid);
+             mt->mt_name, old_pcr_pid, pcr_pid);
   }
   tvhdebug(mt->mt_subsys, "%s:  pcr_pid %04X", mt->mt_name, pcr_pid);
 
