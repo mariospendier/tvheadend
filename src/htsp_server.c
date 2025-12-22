@@ -4384,7 +4384,8 @@ htsp_subscription_stop(htsp_subscription_t *hs, const char *err, const char *sub
   htsmsg_t *m = htsmsg_create_map();
   htsmsg_add_str(m, "method", "subscriptionStop");
   htsmsg_add_u32(m, "subscriptionId", hs->hs_sid);
-  tvhdebug(LS_HTSP, "%s - subscription stop", hs->hs_htsp->htsp_logname);
+  tvhinfo(LS_HTSP, "%s - sending subscriptionStop message for sid %d (status=%s)", 
+          hs->hs_htsp->htsp_logname, hs->hs_sid, err ? err : "OK");
 
   if(err != NULL)
     htsmsg_add_str(m, "status", err);
@@ -4393,6 +4394,10 @@ htsp_subscription_stop(htsp_subscription_t *hs, const char *err, const char *sub
     htsmsg_add_str(m, "subscriptionError", subscriptionErr);
 
   htsp_send_subscription(hs->hs_htsp, m, NULL, hs, 0);
+  
+  /* Reset state flags to allow proper restart on SMT_START */
+  hs->hs_wait_for_video = 0;
+  hs->hs_first = 0;
 }
 
 /**
@@ -4622,14 +4627,15 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     break;
 
   case SMT_START:
-    tvhinfo(LS_HTSP, "%s - received SMT_START for sid %d", 
-            hs->hs_htsp->htsp_logname, hs->hs_sid);
+    tvhinfo(LS_HTSP, "%s - received SMT_START for sid %d (wait_for_video=%d, first=%d)", 
+            hs->hs_htsp->htsp_logname, hs->hs_sid, hs->hs_wait_for_video, hs->hs_first);
     htsp_subscription_start(hs, sm->sm_data);
     break;
 
   case SMT_STOP:
-    tvhinfo(LS_HTSP, "%s - received SMT_STOP (code=%d) for sid %d", 
-            hs->hs_htsp->htsp_logname, sm->sm_code, hs->hs_sid);
+    tvhinfo(LS_HTSP, "%s - received SMT_STOP (code=%d, reason=%s) for sid %d", 
+            hs->hs_htsp->htsp_logname, sm->sm_code, 
+            streaming_code2txt(sm->sm_code), hs->hs_sid);
     htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
