@@ -4382,6 +4382,8 @@ static void
 htsp_subscription_stop(htsp_subscription_t *hs, const char *err, const char *subscriptionErr)
 {
   htsmsg_t *m = htsmsg_create_map();
+  int i;
+  
   htsmsg_add_str(m, "method", "subscriptionStop");
   htsmsg_add_u32(m, "subscriptionId", hs->hs_sid);
   tvhinfo(LS_HTSP, "%s - sending subscriptionStop message for sid %d (status=%s)", 
@@ -4395,9 +4397,44 @@ htsp_subscription_stop(htsp_subscription_t *hs, const char *err, const char *sub
 
   htsp_send_subscription(hs->hs_htsp, m, NULL, hs, 0);
   
+  /* 
+   * Comprehensive HTSP subscription state reset to prevent persistent stream freezes.
+   * This resets all HTSP-internal per-subscription state variables that could cause
+   * the stream to remain blocked after SMT_STOP, particularly during broadcast transitions
+   * (e.g., regional to national channel switches).
+   * 
+   * IMPORTANT: This only affects HTSP subscription state, NOT timeshift functionality.
+   * Timeshift continues running independently.
+   */
+  
   /* Reset state flags to allow proper restart on SMT_START */
   hs->hs_wait_for_video = 0;
   hs->hs_first = 0;
+  
+  /* Reset filtered streams array - clear all stream filters */
+  for(i = 0; i < 8; i++) {
+    hs->hs_filtered_streams[i] = 0;
+  }
+  
+  /* Reset drop statistics - clear frame drop counters */
+  for(i = 0; i < PKT_NTYPES; i++) {
+    hs->hs_dropstats[i] = 0;
+  }
+  
+  /* Reset data error counter */
+  hs->hs_data_errors = 0;
+  
+  /* 
+   * Flush HTSP subscription queue to prevent old packets/metadata from mixing
+   * into the new stream segment. This clears the output queue for this subscription
+   * but does NOT affect timeshift buffers.
+   * Using dead=0 to keep the queue active for future use.
+   */
+  htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0);
+  
+  tvhinfo(LS_HTSP, "%s - HTSP subscription state reset completed for sid %d: "
+          "queue flushed, filters cleared, stats reset (timeshift unaffected)",
+          hs->hs_htsp->htsp_logname, hs->hs_sid);
 }
 
 /**
