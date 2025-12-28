@@ -331,14 +331,16 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
     break;
 
   case SMT_START:
+    gh->gh_passthru = 0;
     if (gh->gh_ss)
       gh_flush(gh);
     gh_start(gh, sm);
     break;
 
   case SMT_STOP:
+    gh->gh_passthru = 0;
     gh_flush(gh);
-    streaming_msg_free(sm);
+    streaming_target_deliver2(gh->gh_output, sm);
     break;
 
   case SMT_GRACE:
