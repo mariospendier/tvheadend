@@ -205,6 +205,8 @@ typedef struct htsp_subscription {
 
   uint32_t hs_data_errors;
 
+  int hs_reconfiguring;  /* Set during source reconfiguration to skip video wait */
+
 } htsp_subscription_t;
 
 
@@ -4274,20 +4276,46 @@ htsp_subscription_start(htsp_subscription_t *hs, const streaming_start_t *ss)
   int i;
   const source_info_t *si;
 
-  tvhdebug(LS_HTSP, "%s - subscription start", hs->hs_htsp->htsp_logname);
+  tvhinfo(LS_HTSP, "%s - subscription start (reconfiguring=%d)", 
+          hs->hs_htsp->htsp_logname, hs->hs_reconfiguring);
 
-  for(i = 0; i < ss->ss_num_components; i++) {
-    const streaming_start_component_t *ssc = &ss->ss_components[i];
-    if (ssc->ssc_disabled) continue;
-    if (SCT_ISVIDEO(ssc->es_type)) {
-      if (ssc->es_width == 0 || ssc->es_height == 0) {
-        hs->hs_wait_for_video = 1;
-        return;
+  /*
+   * Video metadata wait check - only applies to initial subscription startup.
+   * 
+   * During source reconfiguration (PMT switches), we must NOT wait for video 
+   * metadata because:
+   * 1. The service layer only sends ONE SMT_START per reconfiguration
+   * 2. If we return without sending subscriptionStart, the client freezes
+   * 3. Video metadata will arrive via subsequent updates when available
+   * 
+   * This check prevents the race condition where:
+   * - PMT reconfigures (regional<->national switch)
+   * - SMT_START arrives before video width/height are parsed
+   * - htsp_subscription_start returns early without sending message
+   * - Subscription enters deadlock: waits for video, drops packets, never recovers
+   */
+  if (!hs->hs_reconfiguring) {
+    for(i = 0; i < ss->ss_num_components; i++) {
+      const streaming_start_component_t *ssc = &ss->ss_components[i];
+      if (ssc->ssc_disabled) continue;
+      if (SCT_ISVIDEO(ssc->es_type)) {
+        if (ssc->es_width == 0 || ssc->es_height == 0) {
+          tvhinfo(LS_HTSP, "%s - waiting for video metadata (width=%d, height=%d)", 
+                  hs->hs_htsp->htsp_logname, ssc->es_width, ssc->es_height);
+          hs->hs_wait_for_video = 1;
+          return;
+        }
+        break;
       }
-      break;
     }
+  } else {
+    tvhinfo(LS_HTSP, "%s - skipping video wait check during reconfiguration", 
+            hs->hs_htsp->htsp_logname);
   }
   hs->hs_wait_for_video = 0;
+  
+  /* Clear reconfiguring flag now that we're sending the start message */
+  hs->hs_reconfiguring = 0;
 
   m = htsmsg_create_map();
   streams = htsmsg_create_list();
@@ -4379,15 +4407,15 @@ htsp_subscription_start(htsp_subscription_t *hs, const streaming_start_t *ss)
  * Send a 'subscriptionStop' stop
  */
 static void
-htsp_subscription_stop(htsp_subscription_t *hs, const char *err, const char *subscriptionErr)
+htsp_subscription_stop(htsp_subscription_t *hs, int stop_code, const char *err, const char *subscriptionErr)
 {
   htsmsg_t *m = htsmsg_create_map();
   int i;
   
   htsmsg_add_str(m, "method", "subscriptionStop");
   htsmsg_add_u32(m, "subscriptionId", hs->hs_sid);
-  tvhinfo(LS_HTSP, "%s - sending subscriptionStop message for sid %d (status=%s)", 
-          hs->hs_htsp->htsp_logname, hs->hs_sid, err ? err : "OK");
+  tvhinfo(LS_HTSP, "%s - sending subscriptionStop message for sid %d (status=%s, code=%d)", 
+          hs->hs_htsp->htsp_logname, hs->hs_sid, err ? err : "OK", stop_code);
 
   if(err != NULL)
     htsmsg_add_str(m, "status", err);
@@ -4411,6 +4439,9 @@ htsp_subscription_stop(htsp_subscription_t *hs, const char *err, const char *sub
   hs->hs_wait_for_video = 0;
   hs->hs_first = 0;
   
+  /* Track if this is a source reconfiguration to handle subsequent SMT_START differently */
+  hs->hs_reconfiguring = (stop_code == SM_CODE_SOURCE_RECONFIGURED) ? 1 : 0;
+  
   /* Reset filtered streams array - clear all stream filters */
   for(i = 0; i < 8; i++) {
     hs->hs_filtered_streams[i] = 0;
@@ -4433,8 +4464,8 @@ htsp_subscription_stop(htsp_subscription_t *hs, const char *err, const char *sub
   htsp_flush_queue(hs->hs_htsp, &hs->hs_q, 0);
   
   tvhinfo(LS_HTSP, "%s - HTSP subscription state reset completed for sid %d: "
-          "queue flushed, filters cleared, stats reset (timeshift unaffected)",
-          hs->hs_htsp->htsp_logname, hs->hs_sid);
+          "queue flushed, filters cleared, stats reset, reconfiguring=%d (timeshift unaffected)",
+          hs->hs_htsp->htsp_logname, hs->hs_sid, hs->hs_reconfiguring);
 }
 
 /**
@@ -4673,7 +4704,7 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     tvhinfo(LS_HTSP, "%s - received SMT_STOP (code=%d, reason=%s) for sid %d", 
             hs->hs_htsp->htsp_logname, sm->sm_code, 
             streaming_code2txt(sm->sm_code), hs->hs_sid);
-    htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
+    htsp_subscription_stop(hs, sm->sm_code, streaming_code2txt(sm->sm_code),
         sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
 
