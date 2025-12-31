@@ -759,6 +759,8 @@ service_create0
   t->s_channel_name   = service_channel_name;
   t->s_provider_name  = service_provider_name;
   t->s_memoryinfo     = service_memoryinfo;
+  t->s_pending_restart = 0;
+  t->s_in_restart = 0;
   elementary_set_init(&t->s_components, LS_SERVICE, NULL, t);
 
   streaming_pad_init(&t->s_streaming_pad);

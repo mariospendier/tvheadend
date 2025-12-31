@@ -444,15 +444,17 @@ streaming_service_deliver(service_t *t, streaming_message_t *sm)
   int in_restart = atomic_get(&t->s_in_restart);
   int pending_restart = atomic_set(&t->s_pending_restart, 0);
   
-  if (pending_restart && in_restart) {
-    tvhwarn(LS_SERVICE, "%s - pending restart detected during active restart, deferring to avoid recursion",
-            t->s_nicename);
-    /* Re-set the flag so it will be processed after the current restart completes */
-    atomic_set(&t->s_pending_restart, 1);
-  } else if (pending_restart) {
-    tvhinfo(LS_SERVICE, "%s - processing pending restart from streaming_service_deliver", 
-            t->s_nicename);
-    service_restart_streams(t);
+  if (pending_restart) {
+    if (in_restart) {
+      tvhwarn(LS_SERVICE, "%s - pending restart detected during active restart, deferring to avoid recursion",
+              t->s_nicename);
+      /* Re-set the flag so it will be processed after the current restart completes */
+      atomic_set(&t->s_pending_restart, 1);
+    } else {
+      tvhinfo(LS_SERVICE, "%s - processing pending restart from streaming_service_deliver", 
+              t->s_nicename);
+      service_restart_streams(t);
+    }
   }
   
   sm->sm_s = t;
