@@ -1060,22 +1060,38 @@ service_restart_streams(service_t *t)
   const int had_streams = elementary_set_has_streams(&t->s_components, 1);
   const int had_components = had_streams && t->s_running;
 
+  /* Set flag to prevent recursive restart during STOP/START delivery */
+  atomic_set(&t->s_in_restart, 1);
+
+  tvhinfo(LS_SERVICE, "%s - service_restart_streams: had_streams=%d, had_components=%d, s_running=%d",
+          t->s_nicename, had_streams, had_components, t->s_running);
+
   elementary_set_filter_build(&t->s_components);
 
   if(had_streams) {
     if (had_components) {
+      tvhinfo(LS_SERVICE, "%s - sending SMT_STOP (SM_CODE_SOURCE_RECONFIGURED=100) before restart",
+              t->s_nicename);
       sm = streaming_msg_create_code(SMT_STOP, SM_CODE_SOURCE_RECONFIGURED);
       streaming_service_deliver(t, sm);
     }
+    tvhinfo(LS_SERVICE, "%s - building and sending SMT_START after reconfigure",
+            t->s_nicename);
     ss = service_build_streaming_start(t);
     sm = streaming_msg_create_data(SMT_START, ss);
     streaming_pad_deliver(&t->s_streaming_pad, sm);
     t->s_running = 1;
+    tvhinfo(LS_SERVICE, "%s - SMT_START sent, s_running set to 1", t->s_nicename);
   } else {
+    tvhinfo(LS_SERVICE, "%s - no streams available, sending SMT_STOP (SM_CODE_NO_SERVICE)",
+            t->s_nicename);
     sm = streaming_msg_create_code(SMT_STOP, SM_CODE_NO_SERVICE);
     streaming_service_deliver(t, sm);
     t->s_running = 0;
   }
+
+  /* Clear flag after restart is complete */
+  atomic_set(&t->s_in_restart, 0);
 }
 
 /**
@@ -1136,8 +1152,11 @@ service_update_elementary_stream(service_t *t, elementary_stream_t *src)
 
   if (change || restart)
     service_request_save(t);
-  if (restart)
+  if (restart) {
+    tvhinfo(LS_SERVICE, "%s - setting s_pending_restart due to stream parameter change", 
+            t->s_nicename);
     atomic_set(&t->s_pending_restart, 1);
+  }
 }
 
 /**

@@ -432,8 +432,24 @@ streaming_pad_deliver(streaming_pad_t *sp, streaming_message_t *sm)
 void
 streaming_service_deliver(service_t *t, streaming_message_t *sm)
 {
-  if (atomic_set(&t->s_pending_restart, 0))
+  /* Check for pending restart, but only if we're not already in a restart.
+   * This prevents recursive restart calls during STOP delivery which can
+   * cause multiple STOP messages without corresponding START messages.
+   */
+  int in_restart = atomic_get(&t->s_in_restart);
+  int pending_restart = atomic_set(&t->s_pending_restart, 0);
+  
+  if (pending_restart && in_restart) {
+    tvhwarn(LS_SERVICE, "%s - pending restart detected during active restart, deferring to avoid recursion",
+            t->s_nicename);
+    /* Re-set the flag so it will be processed after the current restart completes */
+    atomic_set(&t->s_pending_restart, 1);
+  } else if (pending_restart) {
+    tvhinfo(LS_SERVICE, "%s - processing pending restart from streaming_service_deliver", 
+            t->s_nicename);
     service_restart_streams(t);
+  }
+  
   sm->sm_s = t;
   streaming_pad_deliver(&t->s_streaming_pad, sm);
 }
