@@ -1052,19 +1052,26 @@ service_build_streaming_start(service_t *t)
  * Happens if the stream composition changes.
  * (i.e. an AC3 stream disappears, etc)
  */
-void
-service_restart_streams(service_t *t)
+static void
+service_restart_streams_internal(service_t *t, int depth)
 {
   streaming_message_t *sm;
   streaming_start_t *ss;
   const int had_streams = elementary_set_has_streams(&t->s_components, 1);
   const int had_components = had_streams && t->s_running;
 
+  /* Prevent infinite recursion - should never happen in practice */
+  if (depth > 5) {
+    tvherror(LS_SERVICE, "%s - too many consecutive restarts (%d), potential infinite loop detected",
+             t->s_nicename, depth);
+    return;
+  }
+
   /* Set flag to prevent recursive restart during STOP/START delivery */
   atomic_set(&t->s_in_restart, 1);
 
-  tvhinfo(LS_SERVICE, "%s - service_restart_streams: had_streams=%d, had_components=%d, s_running=%d",
-          t->s_nicename, had_streams, had_components, t->s_running);
+  tvhinfo(LS_SERVICE, "%s - service_restart_streams (depth=%d): had_streams=%d, had_components=%d, s_running=%d",
+          t->s_nicename, depth, had_streams, had_components, t->s_running);
 
   elementary_set_filter_build(&t->s_components);
 
@@ -1095,12 +1102,19 @@ service_restart_streams(service_t *t)
   
   /* Process any restart that was deferred due to recursion prevention.
    * This ensures we don't leave a pending restart unprocessed.
+   * We increment depth to prevent infinite recursion.
    */
   if (atomic_set(&t->s_pending_restart, 0)) {
     tvhinfo(LS_SERVICE, "%s - processing deferred restart after completion of previous restart",
             t->s_nicename);
-    service_restart_streams(t);
+    service_restart_streams_internal(t, depth + 1);
   }
+}
+
+void
+service_restart_streams(service_t *t)
+{
+  service_restart_streams_internal(t, 0);
 }
 
 /**

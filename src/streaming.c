@@ -435,6 +435,11 @@ streaming_service_deliver(service_t *t, streaming_message_t *sm)
   /* Check for pending restart, but only if we're not already in a restart.
    * This prevents recursive restart calls during STOP delivery which can
    * cause multiple STOP messages without corresponding START messages.
+   * 
+   * Note: These two atomic checks are not atomic as a unit, but this is safe:
+   * - s_in_restart is only modified by service_restart_streams() under mutex
+   * - Worst case: we defer a restart unnecessarily or process one that could wait
+   * - Both cases are handled correctly by the deferred restart logic
    */
   int in_restart = atomic_get(&t->s_in_restart);
   int pending_restart = atomic_set(&t->s_pending_restart, 0);

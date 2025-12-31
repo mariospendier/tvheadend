@@ -343,7 +343,7 @@ typedef struct service {
   int s_streaming_live;
   int s_running;
   int s_pending_restart;
-  int s_in_restart;
+  int s_in_restart;  /* Flag to prevent recursive restart race conditions */
 
   // Live status
 #define TSS_LIVE             0x01
