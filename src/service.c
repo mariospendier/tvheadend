@@ -1092,6 +1092,15 @@ service_restart_streams(service_t *t)
 
   /* Clear flag after restart is complete */
   atomic_set(&t->s_in_restart, 0);
+  
+  /* Process any restart that was deferred due to recursion prevention.
+   * This ensures we don't leave a pending restart unprocessed.
+   */
+  if (atomic_set(&t->s_pending_restart, 0)) {
+    tvhinfo(LS_SERVICE, "%s - processing deferred restart after completion of previous restart",
+            t->s_nicename);
+    service_restart_streams(t);
+  }
 }
 
 /**
