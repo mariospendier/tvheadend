@@ -1099,7 +1099,12 @@ service_restart_streams_internal(service_t *t, int depth)
     t->s_running = 0;
   }
 
-  /* Clear flag after restart is complete */
+  /* Clear flag after restart is complete.
+   * Note: There's a potential race window here where another thread could
+   * set s_pending_restart between this clear and the check below. This is
+   * intentional and safe - it allows new restarts to be scheduled, and they
+   * will be processed by the check below or by the next delivery.
+   */
   atomic_set(&t->s_in_restart, 0);
   
   /* Process any restart that was deferred due to recursion prevention.
