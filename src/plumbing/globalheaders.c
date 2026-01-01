@@ -335,8 +335,7 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
     if (gh->gh_ss)
       gh_flush(gh);
     gh_start(gh, sm);
-    /* gh_start() freed the original message, no need to forward here */
-    /* The modified SMT_START will be sent when headers_complete() returns true */
+    /* gh_start() consumes message; modified SMT_START sent after header collection */
     return;
 
   case SMT_STOP:
@@ -376,7 +375,7 @@ gh_pass(globalheaders_t *gh, streaming_message_t *sm)
     gh_flush(gh);
     /* restart */
     gh_start(gh, sm);
-    /* gh_start() consumes sm, will send modified START when headers complete */
+    /* gh_start() consumes message; modified SMT_START sent after header collection */
     return;
 
   case SMT_STOP:

@@ -636,8 +636,7 @@ tsfix_input(void *opaque, streaming_message_t *sm)
   switch(sm->sm_type) {
   case SMT_PACKET:
     if (tf->tf_wait_for_video) {
-      /* Pass packets through without processing while waiting for video metadata */
-      /* This allows downstream globalheaders to collect metadata from packets */
+      /* Allow downstream components to process packets while waiting for video metadata */
       streaming_target_deliver2(tf->tf_output, sm);
       return;
     }
@@ -646,7 +645,7 @@ tsfix_input(void *opaque, streaming_message_t *sm)
   case SMT_START:
     tsfix_stop(tf);
     tsfix_start(tf, sm->sm_data);
-    /* Always forward SMT_START to next component in pipeline */
+    /* Forward SMT_START to prevent pipeline breakage during reconfiguration */
     break;
   case SMT_STOP:
     tsfix_stop(tf);
