@@ -335,7 +335,8 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
     if (gh->gh_ss)
       gh_flush(gh);
     gh_start(gh, sm);
-    break;
+    /* gh_start() consumes message; modified SMT_START sent after header collection */
+    return;
 
   case SMT_STOP:
     gh->gh_passthru = 0;
@@ -374,7 +375,8 @@ gh_pass(globalheaders_t *gh, streaming_message_t *sm)
     gh_flush(gh);
     /* restart */
     gh_start(gh, sm);
-    break;
+    /* gh_start() consumes message; modified SMT_START sent after header collection */
+    return;
 
   case SMT_STOP:
     gh->gh_passthru = 0;

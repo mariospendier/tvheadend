@@ -636,7 +636,8 @@ tsfix_input(void *opaque, streaming_message_t *sm)
   switch(sm->sm_type) {
   case SMT_PACKET:
     if (tf->tf_wait_for_video) {
-      streaming_msg_free(sm);
+      /* Allow downstream components to process packets while waiting for video metadata */
+      streaming_target_deliver2(tf->tf_output, sm);
       return;
     }
     tsfix_input_packet(tf, sm);
@@ -644,10 +645,7 @@ tsfix_input(void *opaque, streaming_message_t *sm)
   case SMT_START:
     tsfix_stop(tf);
     tsfix_start(tf, sm->sm_data);
-    if (tf->tf_wait_for_video) {
-      streaming_msg_free(sm);
-      return;
-    }
+    /* Forward SMT_START to prevent pipeline breakage during reconfiguration */
     break;
   case SMT_STOP:
     tsfix_stop(tf);
