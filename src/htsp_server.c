@@ -207,6 +207,10 @@ typedef struct htsp_subscription {
 
   int hs_reconfiguring;  /* Set during source reconfiguration to skip video wait */
 
+  /* Subscription state guards to prevent duplicate SMT_STOP messages */
+  uint32_t hs_stop_sequence;  /* Sequence number for stop messages */
+  uint8_t  hs_stop_sent;      /* Flag: stop already sent during this reconfiguration */
+
 } htsp_subscription_t;
 
 
@@ -4314,8 +4318,9 @@ htsp_subscription_start(htsp_subscription_t *hs, const streaming_start_t *ss)
   }
   hs->hs_wait_for_video = 0;
   
-  /* Clear reconfiguring flag now that we're sending the start message */
+  /* Clear reconfiguring and stop flags now that we're sending the start message */
   hs->hs_reconfiguring = 0;
+  hs->hs_stop_sent = 0;
 
   m = htsmsg_create_map();
   streams = htsmsg_create_list();
@@ -4409,8 +4414,17 @@ htsp_subscription_start(htsp_subscription_t *hs, const streaming_start_t *ss)
 static void
 htsp_subscription_stop(htsp_subscription_t *hs, int stop_code, const char *err, const char *subscriptionErr)
 {
-  htsmsg_t *m = htsmsg_create_map();
+  htsmsg_t *m;
   int i;
+  
+  /* Guard against duplicate SMT_STOP messages during reconfiguration */
+  if (hs->hs_reconfiguring && hs->hs_stop_sent) {
+    tvhtrace(LS_HTSP, "%s - SMT_STOP already sent during reconfiguration for sid %d (seq=%d)", 
+             hs->hs_htsp->htsp_logname, hs->hs_sid, hs->hs_stop_sequence);
+    return;
+  }
+  
+  m = htsmsg_create_map();
   
   htsmsg_add_str(m, "method", "subscriptionStop");
   htsmsg_add_u32(m, "subscriptionId", hs->hs_sid);
@@ -4424,6 +4438,10 @@ htsp_subscription_stop(htsp_subscription_t *hs, int stop_code, const char *err, 
     htsmsg_add_str(m, "subscriptionError", subscriptionErr);
 
   htsp_send_subscription(hs->hs_htsp, m, NULL, hs, 0);
+  
+  /* Mark that stop has been sent and increment sequence */
+  hs->hs_stop_sent = 1;
+  hs->hs_stop_sequence++;
   
   /* 
    * Comprehensive HTSP subscription state reset to prevent persistent stream freezes.
