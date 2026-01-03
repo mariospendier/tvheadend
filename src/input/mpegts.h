@@ -631,6 +631,12 @@ struct mpegts_service
   mpegts_table_t *s_pmt_mon; ///< Table entry for monitoring PMT
   mpegts_table_t *s_cat_mon; ///< Table entry for monitoring CAT
 
+  /**
+   * PMT change coalescing (to prevent rapid consecutive restarts)
+   */
+  uint32_t s_pmt_change_count;    ///< Number of rapid PMT changes
+  int64_t  s_pmt_last_change;     ///< Timestamp of last PMT change
+
 };
 
 /* **************************************************************************

@@ -1100,6 +1100,13 @@ service_restart(service_t *t)
     t->s_refresh_feed(t);
 
   descrambler_service_start(t);
+  
+  /* Reset PMT change counter after successful restart for MPEGTS services */
+  if (t->s_source_type == S_MPEG_TS) {
+    mpegts_service_t *ms = (mpegts_service_t *)t;
+    ms->s_pmt_change_count = 0;
+    tvhtrace(LS_SERVICE, "%s: PMT change counter reset after restart", t->s_nicename);
+  }
 }
 
 /**

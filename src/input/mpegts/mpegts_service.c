@@ -485,11 +485,30 @@ mpegts_service_refresh(service_t *t)
 {
   mpegts_service_t *s = (mpegts_service_t*)t;
   mpegts_input_t   *i = s->s_dvb_active_input;
+  int64_t now;
 
   /* Validate */
   assert(s->s_source_type == S_MPEG_TS);
   assert(i != NULL);
   lock_assert(&global_lock);
+
+  /* PMT change coalescing - prevent rapid consecutive restarts within 1 second */
+  now = getfastmonoclock();
+  if (s->s_pmt_last_change > 0 && (now - s->s_pmt_last_change) < sec2mono(1)) {
+    s->s_pmt_change_count++;
+    if (s->s_pmt_change_count > 1) {
+      tvhtrace(LS_MPEGTS, "%s: Coalescing rapid PMT change %d (within %"PRId64"ms)",
+               service_nicename(t), s->s_pmt_change_count,
+               mono2ms(now - s->s_pmt_last_change));
+      return; // Skip redundant restart
+    }
+  } else {
+    s->s_pmt_change_count = 1;
+  }
+  s->s_pmt_last_change = now;
+
+  tvhtrace(LS_MPEGTS, "%s: Processing PMT refresh (change count: %d)",
+           service_nicename(t), s->s_pmt_change_count);
 
   /* Re-open */
   i->mi_open_service(i, s, s->s_dvb_subscription_flags, 0, s->s_dvb_subscription_weight);
