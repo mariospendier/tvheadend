@@ -4634,8 +4634,9 @@ htsp_streaming_input(void *opaque, streaming_message_t *sm)
     break;
 
   case SMT_STOP:
-    htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
-        sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
+    if (sm->sm_code != SM_CODE_SOURCE_RECONFIGURED)
+      htsp_subscription_stop(hs, streaming_code2txt(sm->sm_code),
+          sm->sm_code ? _htsp_get_subscription_status(sm->sm_code) : NULL);
     break;
 
   case SMT_GRACE:
