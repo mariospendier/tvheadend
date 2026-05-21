@@ -31,6 +31,7 @@ typedef struct globalheaders {
   streaming_start_t *gh_ss;
 
   int gh_passthru;
+  int gh_reconfiguring; /* set while awaiting SMT_START after SM_CODE_SOURCE_RECONFIGURED */
 
 } globalheaders_t;
 
@@ -359,6 +360,51 @@ gh_hold(globalheaders_t *gh, streaming_message_t *sm)
 
 
 /**
+ * On SOURCE_RECONFIGURED: copy codec headers/params from old ss to new ss,
+ * then immediately forward SMT_START so the client sees no interruption.
+ */
+static void
+gh_update_reconfigured(globalheaders_t *gh, streaming_message_t *sm)
+{
+  streaming_start_t *old_ss = gh->gh_ss;
+  streaming_start_component_t *new_ssc, *old_ssc;
+  streaming_message_t *new_sm;
+  int i;
+
+  gh->gh_ss = streaming_start_copy(sm->sm_data);
+  streaming_msg_free(sm);
+
+  if (old_ss) {
+    for (i = 0; i < gh->gh_ss->ss_num_components; i++) {
+      new_ssc = &gh->gh_ss->ss_components[i];
+      old_ssc = streaming_start_component_find_by_index(old_ss, new_ssc->es_index);
+      if (!old_ssc) continue;
+      if (!new_ssc->ssc_gh && old_ssc->ssc_gh) {
+        new_ssc->ssc_gh = old_ssc->ssc_gh;
+        pktbuf_ref_inc(new_ssc->ssc_gh);
+      }
+      if (SCT_ISVIDEO(new_ssc->es_type)) {
+        if (!new_ssc->es_width)      new_ssc->es_width      = old_ssc->es_width;
+        if (!new_ssc->es_height)     new_ssc->es_height     = old_ssc->es_height;
+        if (!new_ssc->es_aspect_num) new_ssc->es_aspect_num = old_ssc->es_aspect_num;
+        if (!new_ssc->es_aspect_den) new_ssc->es_aspect_den = old_ssc->es_aspect_den;
+      }
+      if (!new_ssc->es_frame_duration)
+        new_ssc->es_frame_duration = old_ssc->es_frame_duration;
+      if (SCT_ISAUDIO(new_ssc->es_type)) {
+        if (!new_ssc->es_channels) new_ssc->es_channels = old_ssc->es_channels;
+        if (!new_ssc->es_sri)      new_ssc->es_sri      = old_ssc->es_sri;
+      }
+    }
+    streaming_start_unref(old_ss);
+  }
+
+  new_sm = streaming_msg_create_data(SMT_START, streaming_start_copy(gh->gh_ss));
+  streaming_target_deliver2(gh->gh_output, new_sm);
+}
+
+
+/**
  *
  */
 static void
@@ -367,6 +413,11 @@ gh_pass(globalheaders_t *gh, streaming_message_t *sm)
   th_pkt_t *pkt;
   switch(sm->sm_type) {
   case SMT_START:
+    if (gh->gh_reconfiguring) {
+      gh->gh_reconfiguring = 0;
+      gh_update_reconfigured(gh, sm);
+      return;
+    }
     /* stop */
     gh->gh_passthru = 0;
     gh_flush(gh);
@@ -375,6 +426,12 @@ gh_pass(globalheaders_t *gh, streaming_message_t *sm)
     break;
 
   case SMT_STOP:
+    if (sm->sm_code == SM_CODE_SOURCE_RECONFIGURED) {
+      gh->gh_reconfiguring = 1;
+      streaming_target_deliver2(gh->gh_output, sm);
+      return;
+    }
+    gh->gh_reconfiguring = 0;
     gh->gh_passthru = 0;
     gh_flush(gh);
     // FALLTHRU
