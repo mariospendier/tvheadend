@@ -636,7 +636,11 @@ tsfix_input(void *opaque, streaming_message_t *sm)
   switch(sm->sm_type) {
   case SMT_PACKET:
     if (tf->tf_wait_for_video) {
-      streaming_msg_free(sm);
+      /* forward without timestamp correction; downstream (globalheaders)
+       * can still collect codec headers and fire its hold-mode timeout,
+       * preventing a permanent freeze when CA failure or a late PMT update
+       * blocks self-healing from establishing video dimensions */
+      streaming_target_deliver2(tf->tf_output, sm);
       return;
     }
     tsfix_input_packet(tf, sm);
@@ -644,10 +648,8 @@ tsfix_input(void *opaque, streaming_message_t *sm)
   case SMT_START:
     tsfix_stop(tf);
     tsfix_start(tf, sm->sm_data);
-    if (tf->tf_wait_for_video) {
-      streaming_msg_free(sm);
-      return;
-    }
+    /* always forward: downstream (globalheaders) must receive SMT_START
+     * even with unknown video dims to avoid a permanent hold-mode deadlock */
     break;
   case SMT_STOP:
     tsfix_stop(tf);
