@@ -672,6 +672,16 @@ descrambler_change_keystate( th_descrambler_t *td, th_descrambler_keystate_t key
   dr->dr_ca_fatal = fatal;
   tvhtrace(LS_DESCRAMBLER, "service \"%s\": %d descramblers (%d ok %d failed %d fatal)",
                            t->s_nicename, count, resolved, failed, fatal);
+  /* When every descrambler is fatal (CA unreachable), the queue condition
+   * dr_ca_count != dr_ca_failed stays true and packets queue up forever.
+   * Flush the queue now with skip-through so the client gets data instead
+   * of a permanent freeze. */
+  if (count > 0 && count == fatal && dr->dr_queue_total > 0) {
+    th_descrambler_data_t *dd;
+    dr->dr_skip = 1;
+    while ((dd = TAILQ_FIRST(&dr->dr_queue)) != NULL)
+      descrambler_data_destroy(dr, dd, 1);
+  }
   if (lock)
     tvh_mutex_unlock(&t->s_stream_mutex);
 }
