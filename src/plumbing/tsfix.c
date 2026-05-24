@@ -65,6 +65,7 @@ typedef struct tsfix {
   struct tfstream_list tf_streams;
   int tf_hasvideo;
   int tf_wait_for_video;
+  int tf_reconfiguring;
   int64_t tf_tsref;
   int64_t tf_start_time;
   int64_t dts_offset;
@@ -644,13 +645,18 @@ tsfix_input(void *opaque, streaming_message_t *sm)
   case SMT_START:
     tsfix_stop(tf);
     tsfix_start(tf, sm->sm_data);
-    if (tf->tf_wait_for_video) {
+    if (tf->tf_wait_for_video && !tf->tf_reconfiguring) {
       streaming_msg_free(sm);
       return;
     }
+    tf->tf_reconfiguring = 0;
     break;
   case SMT_STOP:
     tsfix_stop(tf);
+    if (sm->sm_code == SM_CODE_SOURCE_RECONFIGURED)
+      tf->tf_reconfiguring = 1;
+    else
+      tf->tf_reconfiguring = 0;
     break;
   case SMT_TIMESHIFT_STATUS:
     if(tf->dts_offset == PTS_UNSET) {

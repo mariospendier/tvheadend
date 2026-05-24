@@ -2582,10 +2582,11 @@ capmt_service_start(caclient_t *cac, service_t *s)
 
 fin:
   if (ct) {
-    /* If the existing entry is not yet resolved, OScam has lost our key
-     * state (rapid re-subscription, ECM reset, reconnect).  Reset the ok
-     * flag and force a new CAPMT notify so OScam re-processes the service. */
-    if (!change && ct->td_keystate != DS_RESOLVED) {
+    /* On any service restart (service already in list), force OScam to
+     * re-process the service by resetting the ok flag.  This covers PMT
+     * changes where the ECM PID or content changed while keystate was
+     * still DS_RESOLVED from the previous stream. */
+    if (!change) {
       ct->ct_ok_flag = 0;
       change = 1;
     }

@@ -1267,7 +1267,7 @@ next:
       }
     }
 queue:
-    if (dr->dr_ca_count != dr->dr_ca_failed) {
+    if (!dr->dr_skip && dr->dr_ca_count != dr->dr_ca_failed) {
       /*
        * Fill a temporary buffer until the keys are known to make
        * streaming faster.
@@ -1285,6 +1285,9 @@ queue:
         }
       }
       descrambler_data_append(dr, tsb, len);
+      service_set_streaming_status_flags(t, TSS_NO_ACCESS);
+    } else if (dr->dr_skip) {
+      ts_skip_packet2((mpegts_service_t *)t, tsb, len);
       service_set_streaming_status_flags(t, TSS_NO_ACCESS);
     }
   } else {
