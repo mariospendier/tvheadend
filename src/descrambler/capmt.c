@@ -2581,8 +2581,16 @@ capmt_service_start(caclient_t *cac, service_t *s)
   tvh_cond_signal(&capmt->capmt_cond, 0);
 
 fin:
-  if (ct)
+  if (ct) {
+    /* If the existing entry is not yet resolved, OScam has lost our key
+     * state (rapid re-subscription, ECM reset, reconnect).  Reset the ok
+     * flag and force a new CAPMT notify so OScam re-processes the service. */
+    if (!change && ct->td_keystate != DS_RESOLVED) {
+      ct->ct_ok_flag = 0;
+      change = 1;
+    }
     mtimer_arm_rel(&ct->ct_ok_timer, capmt_ok_timer_cb, ct, sec2mono(3)/2);
+  }
   tvh_mutex_unlock(&t->s_stream_mutex);
   tvh_mutex_unlock(&capmt->capmt_mutex);
 
